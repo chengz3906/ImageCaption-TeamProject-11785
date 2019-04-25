@@ -2,7 +2,6 @@ import torch
 from torch import nn
 import torchvision
 import numpy as np
-import cv2
 from torchvision.transforms.functional import resized_crop
 from torchvision.transforms import ToPILImage, ToTensor
 from model.utils.config import cfg
@@ -12,6 +11,7 @@ from model.roi_layers import nms
 from model.faster_rcnn.resnet import resnet
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class Detector(nn.Module):
     """
@@ -86,7 +86,7 @@ class Detector(nn.Module):
         pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
         pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
 
-        thresh = 0.00000005
+        thresh = 0.05
         target_bbox = []
         for i in range(batch_size):
             current_bbox = []
@@ -124,226 +124,6 @@ class Detector(nn.Module):
                 cropped_imgs.append(cropped)
         cropped_imgs = torch.stack(cropped_imgs)
         return cropped_imgs, bbox_num
-
-    def fine_tune(self, fine_tune=True):
-        """
-        Allow or prevent the computation of gradients for convolutional blocks 2 through 4 of the encoder.
-
-        :param fine_tune: Allow?
-        """
-        for p in self.resnet.parameters():
-            p.requires_grad = False
-        # If fine-tuning, only fine-tune convolutional blocks 2 through 4
-        for c in list(self.resnet.children())[5:]:
-            for p in c.parameters():
-                p.requires_grad = fine_tune
-
-
-class EncoderWithDetection(nn.Module):
-    """
-    Encoder with detection.
-    """
-
-    def __init__(self, encoded_image_size=14):
-        super(EncoderWithDetection, self).__init__()
-        self.enc_image_size = encoded_image_size
-
-        self.classes = np.asarray(['__background__',
-                              'aeroplane', 'bicycle', 'bird', 'boat',
-                              'bottle', 'bus', 'car', 'cat', 'chair',
-                              'cow', 'diningtable', 'dog', 'horse',
-                              'motorbike', 'person', 'pottedplant',
-                              'sheep', 'sofa', 'train', 'tvmonitor'])
-        faster_rcnn = resnet(classes=self.classes, pretrained=False)  # pretrained ImageNet ResNet-101
-
-        faster_rcnn.create_architecture()
-
-        load_name = 'models/resnet101_faster_rcnn.pth'
-        if torch.cuda.is_available():
-            checkpoint = torch.load(load_name)
-            faster_rcnn.cuda()
-        else:
-            checkpoint = torch.load(load_name, map_location=(lambda storage, loc: storage))
-        faster_rcnn.load_state_dict(checkpoint['model'])
-        if 'pooling_mode' in checkpoint.keys():
-            cfg.POOLING_MODE = checkpoint['pooling_mode']
-
-        self.resnet = faster_rcnn
-
-        # Resize image to fixed size to allow input images of variable size
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
-
-        self.fine_tune()
-
-    def forward(self, images):
-        """
-        Forward propagation.
-
-        :param images: images, a tensor of dimensions (batch_size, 3, image_size, image_size)
-        :return: encoded images
-        """
-        batch_size = images.shape[0]
-        im_info = torch.tensor([256, 256, 1] * batch_size)
-        im_info = torch.reshape(im_info, (batch_size, 3))
-        gt_boxes = torch.zeros(batch_size, 1, 5)
-        num_boxes = torch.ones(batch_size)
-        if torch.cuda.is_available():
-            im_info = im_info.cuda()
-            gt_boxes = gt_boxes.cuda()
-            num_boxes = num_boxes.cuda()
-
-        out = self.resnet(images, im_info, gt_boxes, num_boxes)  # (batch_size, 2048, image_size/32, image_size/32)
-
-        boxes = out[0][:, :, 1:5]
-        scores = out[1]
-        bbox_pred = out[2]
-
-        # Apply bounding-box regression deltas
-        box_deltas = bbox_pred.data
-        if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
-            # Optionally normalize targets by a precomputed mean and stdev
-            if torch.cuda.is_available():
-                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
-                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
-            else:
-                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS) \
-                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
-            box_deltas = box_deltas.view(batch_size, -1, 4 * len(self.classes))
-        pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
-        pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
-
-        thresh = 1e-8
-        target_bbox = []
-        for i in range(batch_size):
-            current_bbox = []
-            for j in range(1, len(self.classes)):
-                inds = torch.nonzero(scores[i, :, j] > thresh).view(-1)
-                # if there is det
-                if inds.numel() > 0:
-                    cls_scores = scores[i, :, j][inds]
-                    _, order = torch.sort(cls_scores, 0, True)
-                    cls_boxes = pred_boxes[i, inds, j * 4:(j + 1) * 4]
-                    cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
-                    # cls_dets = torch.cat((cls_boxes, cls_scores), 1)
-                    cls_dets = cls_dets[order]
-                    # keep = nms(cls_dets, cfg.TEST.NMS, force_cpu=not cfg.USE_GPU_NMS)
-                    keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
-                    cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
-                    current_bbox.append(cls_dets)
-            current_bbox = torch.cat(current_bbox, 0)
-            target_bbox.append(current_bbox)
-
-        return out
-
-    def fine_tune(self, fine_tune=True):
-        """
-        Allow or prevent the computation of gradients for convolutional blocks 2 through 4 of the encoder.
-
-        :param fine_tune: Allow?
-        """
-        for p in self.resnet.parameters():
-            p.requires_grad = False
-        # If fine-tuning, only fine-tune convolutional blocks 2 through 4
-        for c in list(self.resnet.children())[5:]:
-            for p in c.parameters():
-                p.requires_grad = fine_tune
-
-
-class EncoderWithDetection(nn.Module):
-    """
-    Encoder with detection.
-    """
-
-    def __init__(self, encoded_image_size=14):
-        super(EncoderWithDetection, self).__init__()
-        self.enc_image_size = encoded_image_size
-
-        self.classes = np.asarray(['__background__',
-                              'aeroplane', 'bicycle', 'bird', 'boat',
-                              'bottle', 'bus', 'car', 'cat', 'chair',
-                              'cow', 'diningtable', 'dog', 'horse',
-                              'motorbike', 'person', 'pottedplant',
-                              'sheep', 'sofa', 'train', 'tvmonitor'])
-        faster_rcnn = resnet(classes=self.classes, pretrained=False)  # pretrained ImageNet ResNet-101
-
-        faster_rcnn.create_architecture()
-
-        load_name = 'models/resnet101_faster_rcnn.pth'
-        if torch.cuda.is_available():
-            checkpoint = torch.load(load_name)
-            faster_rcnn.cuda()
-        else:
-            checkpoint = torch.load(load_name, map_location=(lambda storage, loc: storage))
-        faster_rcnn.load_state_dict(checkpoint['model'])
-        if 'pooling_mode' in checkpoint.keys():
-            cfg.POOLING_MODE = checkpoint['pooling_mode']
-
-        self.resnet = faster_rcnn
-
-        # Resize image to fixed size to allow input images of variable size
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
-
-        self.fine_tune()
-
-    def forward(self, images):
-        """
-        Forward propagation.
-
-        :param images: images, a tensor of dimensions (batch_size, 3, image_size, image_size)
-        :return: encoded images
-        """
-        batch_size = images.shape[0]
-        im_info = torch.tensor([256, 256, 1] * batch_size)
-        im_info = torch.reshape(im_info, (batch_size, 3))
-        gt_boxes = torch.zeros(batch_size, 1, 5)
-        num_boxes = torch.ones(batch_size)
-        if torch.cuda.is_available():
-            im_info = im_info.cuda()
-            gt_boxes = gt_boxes.cuda()
-            num_boxes = num_boxes.cuda()
-
-        out = self.resnet(images, im_info, gt_boxes, num_boxes)  # (batch_size, 2048, image_size/32, image_size/32)
-
-        boxes = out[0][:, :, 1:5]
-        scores = out[1]
-        bbox_pred = out[2]
-
-        # Apply bounding-box regression deltas
-        box_deltas = bbox_pred.data
-        if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
-            # Optionally normalize targets by a precomputed mean and stdev
-            if torch.cuda.is_available():
-                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
-                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
-            else:
-                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS) \
-                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
-            box_deltas = box_deltas.view(batch_size, -1, 4 * len(self.classes))
-        pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
-        pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
-
-        thresh = 1e-8
-        target_bbox = []
-        for i in range(batch_size):
-            current_bbox = []
-            for j in range(1, len(self.classes)):
-                inds = torch.nonzero(scores[i, :, j] > thresh).view(-1)
-                # if there is det
-                if inds.numel() > 0:
-                    cls_scores = scores[i, :, j][inds]
-                    _, order = torch.sort(cls_scores, 0, True)
-                    cls_boxes = pred_boxes[i, inds, j * 4:(j + 1) * 4]
-                    cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
-                    # cls_dets = torch.cat((cls_boxes, cls_scores), 1)
-                    cls_dets = cls_dets[order]
-                    # keep = nms(cls_dets, cfg.TEST.NMS, force_cpu=not cfg.USE_GPU_NMS)
-                    keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
-                    cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
-                    current_bbox.append(cls_dets)
-            current_bbox = torch.cat(current_bbox, 0)
-            target_bbox.append(current_bbox)
-
-        return out
 
     def fine_tune(self, fine_tune=True):
         """

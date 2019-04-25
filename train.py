@@ -155,7 +155,7 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
     """
 
     decoder.train()  # train mode (dropout and batchnorm is used)
-    encoder.eval()
+    encoder.train()
 
     batch_time = AverageMeter()  # forward prop. + back prop. time
     data_time = AverageMeter()  # data loading time
