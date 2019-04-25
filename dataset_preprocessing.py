@@ -49,7 +49,7 @@ def preprocess(dataset_name, image_path, caption_path, output_path):
     word_map['<unk>'] = len(word_map)
     word_map['<start>'] = len(word_map)
     word_map['<end>'] = len(word_map)
-    with open("%s/%s_WORDMAP_min_word_freq_%d.json" % (output_path, dataset_name, min_word_freq), 'w') as j:
+    with open("%s/%s/%s_WORDMAP_min_word_freq_%d.json" % (output_path, dataset_name, dataset_name, min_word_freq), 'w') as j:
         json.dump(word_map, j)
 
     # Organize caption data and save them with hdf5
@@ -57,8 +57,8 @@ def preprocess(dataset_name, image_path, caption_path, output_path):
                    (val_image_with_caption, 'val'), 
                    (test_image_with_caption, 'test')]
     for image_with_caption, split in data_splits:
-        with h5py.File("%s/%s_%s_max_cap_%d_min_word_freq_%d.hdf5"
-                       % (output_path, dataset_name,
+        with h5py.File("%s/%s/%s_%s_max_cap_%d_min_word_freq_%d.hdf5"
+                       % (output_path, dataset_name, dataset_name,
                           split, max_cap_len, min_word_freq), 'a') as h5f:
             dset = h5f.create_dataset("image_data",
                                       (len(image_with_caption), 3, 256, 256),
@@ -102,13 +102,17 @@ def preprocess(dataset_name, image_path, caption_path, output_path):
                     caption_lengths.append(c_len)
 
             # Save encoded captions and their lengths to JSON files
-            with open("%s/%s_%s_CAPTIONS_max_cap_%d_min_word_freq_%d.json"
-                      % (output_path, dataset_name, split, max_cap_len, min_word_freq), 'w') as j:
+            with open("%s/%s/%s_%s_CAPTIONS_max_cap_%d_min_word_freq_%d.json"
+                      % (output_path, dataset_name, dataset_name, split, max_cap_len, min_word_freq), 'w') as j:
                 json.dump(complete_captions, j)
 
-            with open("%s/%s_%s_CAPLENS_max_cap_%d_min_word_freq_%d.json"
-                      % (output_path, dataset_name, split, max_cap_len, min_word_freq), 'w') as j:
+            with open("%s/%s/%s_%s_CAPLENS_max_cap_%d_min_word_freq_%d.json"
+                      % (output_path, dataset_name, dataset_name, split, max_cap_len, min_word_freq), 'w') as j:
                 json.dump(caption_lengths, j)
+
+            with open("%s/%s/%s_%s_IMAGENAMES.json"
+                      % (output_path, dataset_name, dataset_name, split), 'w') as j:
+                json.dump(list(image_with_caption.keys()), j)
 
 
 def main():

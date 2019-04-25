@@ -11,11 +11,12 @@ from tqdm import tqdm
 # Parameters
 data_folder = '../data'  # folder with data files saved by create_input_files.py
 dataset_name = 'flickr8k'
+rst_path = '../results'
 max_cap_len = 100
 min_word_freq = 3
 num_caption_per_image = 5
 checkpoint = 'BEST_checkpoint_%s_max_cap_%d_min_word_freq_%d.pth.tar' % (dataset_name, max_cap_len, min_word_freq)  # model checkpoint
-word_map_file = "%s/%s_WORDMAP_min_word_freq_%d.json" % (data_folder, dataset_name, min_word_freq)  # word map, ensure it's the same the data was encoded with and the model was trained with
+word_map_file = "%s/%s/%s_WORDMAP_min_word_freq_%d.json" % (data_folder, dataset_name, dataset_name, min_word_freq)  # word map, ensure it's the same the data was encoded with and the model was trained with
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 
@@ -60,9 +61,11 @@ def evaluate(beam_size):
     # references = [[ref1a, ref1b, ref1c], [ref2a, ref2b], ...], hypotheses = [hyp1, hyp2, ...]
     references = list()
     hypotheses = list()
+    rst_hypo = dict()
+    rst_refer = dict()
 
     # For each image
-    for i, (image, caps, caplens, allcaps) in enumerate(
+    for i, (image, caps, caplens, allcaps, imgname) in enumerate(
             tqdm(loader, desc="EVALUATING AT BEAM SIZE " + str(beam_size))):
 
         k = beam_size
@@ -162,20 +165,34 @@ def evaluate(beam_size):
         i = complete_seqs_scores.index(max(complete_seqs_scores))
         seq = complete_seqs[i]
 
+        imgname = imgname[0]
         # References
         img_caps = allcaps[0].tolist()
         img_captions = list(
             map(lambda c: [w for w in c if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}],
                 img_caps))  # remove <start> and pads
         references.append(img_captions)
+        img_captions_text = [[rev_word_map[w] for w in cap] for cap in img_captions]
+        rst_refer[imgname] = img_captions_text
 
         # Hypotheses
-        hypotheses.append([w for w in seq if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}])
+        hypo_captions = [w for w in seq if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}]
+        hypotheses.append(hypo_captions)
+        hypo_captions_text = [rev_word_map[w] for w in hypo_captions]
+        rst_hypo[imgname] = hypo_captions_text
 
         assert len(references) == len(hypotheses)
 
     # Calculate BLEU-4 scores
     bleu4 = corpus_bleu(references, hypotheses)
+
+    with open("%s/%s_REFER_%s.json"
+              % (rst_path, dataset_name, data_specs), 'w') as j:
+        json.dump(rst_refer, j)
+
+    with open("%s/%s_HYPO_%s.json"
+              % (rst_path, dataset_name, data_specs), 'w') as j:
+        json.dump(rst_hypo, j)
 
     return bleu4
 
