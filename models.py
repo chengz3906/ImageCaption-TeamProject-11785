@@ -47,12 +47,6 @@ class Detector(nn.Module):
         self.fine_tune()
 
     def forward(self, images):
-        """
-        Forward propagation.
-
-        :param images: images, a tensor of dimensions (batch_size, 3, image_size, image_size)
-        :return: encoded images
-        """
         batch_size = images.shape[0]
         im_info = torch.tensor([self.scale, self.scale, 1] * batch_size)
         im_info = torch.reshape(im_info, (batch_size, 3))
