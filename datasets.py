@@ -2,20 +2,25 @@ import torch
 from torch.utils.data import Dataset
 import h5py
 import json
-
+from torchvision.transforms.functional import resize
+from torchvision.transforms import ToPILImage, ToTensor
 
 class CaptionDataset(Dataset):
     """
     A PyTorch Dataset class to be used in a PyTorch DataLoader to create batches.
     """
 
-    def __init__(self, data_folder, data_name, data_specs, split, transform=None):
+    def __init__(self, data_folder, data_name, data_specs, split, scale=256, transform=None):
         """
         :param data_folder: folder where data files are stored
         :param data_name: base name of processed datasets
         :param split: split, one of 'TRAIN', 'VAL', or 'TEST'
         :param transform: image transform pipeline
         """
+        self.scale = scale
+        self.to_pil = ToPILImage()
+        self.to_tensor = ToTensor()
+
         self.split = split
         assert self.split in {'train', 'val', 'test'}
 
@@ -49,6 +54,10 @@ class CaptionDataset(Dataset):
         img = torch.FloatTensor(self.imgs[i // self.cpi] / 255.)
         if self.transform is not None:
             img = self.transform(img)
+        if self.scale != 256:
+            img = self.to_pil(img)
+            img = resize(img, (self.scale, self.scale))
+            img = self.to_tensor(img)
 
         caption = torch.LongTensor(self.captions[i])
 

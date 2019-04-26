@@ -94,10 +94,10 @@ def main():
                                      std=[0.229, 0.224, 0.225])
     data_specs = "max_cap_%d_min_word_freq_%d" % (max_cap_len, min_word_freq)
     train_loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, dataset_name, data_specs, 'train', transform=transforms.Compose([normalize])),
+        CaptionDataset(data_folder, dataset_name, data_specs, 'train', scale=600, transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, dataset_name, data_specs, 'val', transform=transforms.Compose([normalize])),
+        CaptionDataset(data_folder, dataset_name, data_specs, 'val', scale=600, transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
 
     # Epochs

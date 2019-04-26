@@ -18,9 +18,9 @@ class Detector(nn.Module):
     Encoder with detection.
     """
 
-    def __init__(self, encoded_image_size=14):
+    def __init__(self, scale=600):
         super(Detector, self).__init__()
-        self.enc_image_size = encoded_image_size
+        self.scale = scale
 
         self.classes = np.asarray(['__background__',
                               'aeroplane', 'bicycle', 'bird', 'boat',
@@ -44,9 +44,6 @@ class Detector(nn.Module):
 
         self.resnet = faster_rcnn
 
-        # Resize image to fixed size to allow input images of variable size
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
-
         self.fine_tune()
 
     def forward(self, images):
@@ -57,7 +54,7 @@ class Detector(nn.Module):
         :return: encoded images
         """
         batch_size = images.shape[0]
-        im_info = torch.tensor([256, 256, 1] * batch_size)
+        im_info = torch.tensor([self.scale, self.scale, 1] * batch_size)
         im_info = torch.reshape(im_info, (batch_size, 3))
         gt_boxes = torch.zeros(batch_size, 1, 5)
         num_boxes = torch.ones(batch_size)
@@ -66,7 +63,7 @@ class Detector(nn.Module):
             gt_boxes = gt_boxes.cuda()
             num_boxes = num_boxes.cuda()
 
-        out = self.resnet(images, im_info, gt_boxes, num_boxes)  # (batch_size, 2048, image_size/32, image_size/32)
+        out = self.resnet(images, im_info, gt_boxes, num_boxes)
 
         boxes = out[0][:, :, 1:5]
         scores = out[1]
