@@ -13,7 +13,7 @@ from datetime import datetime
 
 # Data parameters
 data_folder = '../data'  # folder with data files saved by create_input_files.py
-dataset_name = 'flickr8k'  # base name shared by data files
+dataset_name = 'coco_val2014'  # base name shared by data files
 max_cap_len = 100
 min_word_freq = 3
 num_caption_per_image = 5
