@@ -16,7 +16,7 @@ data_folder = '../data'  # folder with data files saved by create_input_files.py
 dataset_name = 'coco_val2014'  # base name shared by data files
 max_cap_len = 100
 min_word_freq = 3
-num_caption_per_image = 5
+num_caption_per_image = 1
 
 # Model parameters
 emb_dim = 512  # dimension of word embeddings

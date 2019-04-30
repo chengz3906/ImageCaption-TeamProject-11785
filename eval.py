@@ -10,11 +10,11 @@ from tqdm import tqdm
 
 # Parameters
 data_folder = '../data'  # folder with data files saved by create_input_files.py
-dataset_name = 'flickr8k'
+dataset_name = 'coco_val2014'
 rst_path = '../results'
 max_cap_len = 100
 min_word_freq = 3
-num_caption_per_image = 5
+num_caption_per_image = 1
 checkpoint = 'BEST_checkpoint_%s_max_cap_%d_min_word_freq_%d.pth.tar' % (dataset_name, max_cap_len, min_word_freq)  # model checkpoint
 word_map_file = "%s/%s/%s_WORDMAP_min_word_freq_%d.json" % (data_folder, dataset_name, dataset_name, min_word_freq)  # word map, ensure it's the same the data was encoded with and the model was trained with
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
@@ -182,7 +182,7 @@ def evaluate(beam_size):
         rst_hypo[imgname] = hypo_captions_text
 
         assert len(references) == len(hypotheses)
-
+    
     # Calculate BLEU-4 scores
     bleu4 = corpus_bleu(references, hypotheses)
 

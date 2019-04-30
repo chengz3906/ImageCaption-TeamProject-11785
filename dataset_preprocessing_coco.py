@@ -8,7 +8,7 @@ import numpy as np
 
 max_cap_len = 100
 min_word_freq = 3
-num_caption_per_image = 5
+num_caption_per_image = 1
 available_datasets = ['coco_val2014', 'flickr8k', 'flickr30k']
 
 
@@ -41,8 +41,8 @@ def preprocess(dataset_name, image_path, caption_path, output_path):
         if len(caption_words) > max_cap_len:
             continue
         word_count.update(caption_words)
-        image_with_caption[image_name] = caption_words
-   
+        image_with_caption[image_name] = [caption_words]
+
     # make train-val-test split (6:1:1)
     train_image_with_caption = {}
     val_image_with_caption = {}
