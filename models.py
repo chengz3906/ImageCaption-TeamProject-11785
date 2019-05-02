@@ -9,6 +9,7 @@ from model.rpn.bbox_transform import bbox_transform_inv
 from model.rpn.bbox_transform import clip_boxes
 from model.roi_layers import nms
 from model.faster_rcnn.resnet import resnet
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pack_sequence
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -111,6 +112,7 @@ class Detector(nn.Module):
         cropped_imgs = []
         to_img = ToPILImage()
         to_tensor = ToTensor()
+        # images: (batch_size, 3, image_size, image_size)
         for i in range(images.shape[0]):
             img = to_img(images[i])
             bboxes = target_bbox[i]
@@ -137,6 +139,77 @@ class Detector(nn.Module):
         for c in list(self.resnet.children())[5:]:
             for p in c.parameters():
                 p.requires_grad = fine_tune
+
+
+class EncoderForDector(nn.Module):
+    """
+    Encoder.
+    input: (B * Num_box, 3, size_box, size_box), list_of_Num_box
+    CNN: (B * Num_box, 2048)
+    RNN: (Num_box, B, 2048) -> (B, N_hid) OR (Num_box, B, N_hid) for attention
+        OR ...
+    """
+
+    def __init__(self, n_hid=512, encoded_image_size=1):
+        super(Encoder, self).__init__()
+        self.enc_image_size = encoded_image_size
+        self.n_hid = n_hid
+
+        resnet = torchvision.models.resnet101(pretrained=True)  # pretrained ImageNet ResNet-101
+
+        # Remove linear and pool layers (since we're not doing classification)
+        modules = list(resnet.children())[:-2]
+        self.resnet = nn.Sequential(*modules)
+
+        # Resize image to fixed size to allow input images of variable size
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
+
+        self.lstm = nn.LSTM(self.enc_image_size, n_hid, 1, bidirectional=True, dropout=0)
+
+        self.fine_tune()
+
+    def forward(self, stacked_images, num_box):
+        """
+
+        :param stacked_images:
+        :param num_box:
+        :return:
+            hn: (B, N_hid)
+            lstm_output: (N_max, B, N_hid)
+            sorted_idx for number of boxes
+        """
+        cnn_out = self.resnet(stacked_images)  # (B*N_box, 2048, image_size/32, image_size/32)
+        cnn_out = self.adaptive_pool(cnn_out)  # (B*N_box, 2048, encoded_image_size, encoded_image_size)
+
+        assert self.enc_image_size == 1
+        cnn_out = cnn_out.squeeze(3).squeeze(2)
+        # reconstruct a list of tensors
+        start_idx = np.cumsum([0] + num_box)
+        list_tensors = [cnn_out[start_idx[i]: start_idx[i + 1]] for i in range(len(num_box))]
+        sorted_idx = np.argsort(-np.array(num_box))
+        list_tensors = list_tensors[sorted_idx]
+
+        packed = pack_sequence(list_tensors)
+        # (N_max, B, 2048)
+        packed_input, sorted_num_box = pad_packed_sequence(packed)
+        packed_input = pack_padded_sequence(packed_input, sorted_num_box)
+        lstm_output, (h_n, c_n) = self.lstm(packed_input)
+
+        return h_n, lstm_output, sorted_idx
+
+    def fine_tune(self, fine_tune=True):
+        """
+        Allow or prevent the computation of gradients for convolutional blocks 2 through 4 of the encoder.
+
+        :param fine_tune: Allow?
+        """
+        for p in self.resnet.parameters():
+            p.requires_grad = False
+        # If fine-tuning, only fine-tune convolutional blocks 2 through 4
+        for c in list(self.resnet.children())[5:]:
+            for p in c.parameters():
+                p.requires_grad = fine_tune
+
 
 
 class Encoder(nn.Module):
