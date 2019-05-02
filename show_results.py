@@ -1,7 +1,7 @@
 import json
 
-hypo_path = '../results/flickr8k_HYPO_max_cap_100_min_word_freq_3.json'
-refer_path = '../results/flickr8k_REFER_max_cap_100_min_word_freq_3.json'
+hypo_path = '../results/coco_val2014_HYPO_max_cap_100_min_word_freq_3.json'
+refer_path = '../results/coco_val2014_REFER_max_cap_100_min_word_freq_3.json'
 
 
 def main():

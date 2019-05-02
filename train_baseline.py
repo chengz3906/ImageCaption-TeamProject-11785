@@ -13,10 +13,10 @@ from datetime import datetime
 
 # Data parameters
 data_folder = '../data'  # folder with data files saved by create_input_files.py
-dataset_name = 'flickr8k'  # base name shared by data files
+dataset_name = 'coco_val2014'  # base name shared by data files
 max_cap_len = 100
 min_word_freq = 3
-num_caption_per_image = 5
+num_caption_per_image = 1
 
 # Model parameters
 emb_dim = 512  # dimension of word embeddings
@@ -255,7 +255,7 @@ def validate(val_loader, encoder, decoder, criterion):
     hypotheses = list()  # hypotheses (predictions)
 
     # Batches
-    for i, (imgs, caps, caplens, allcaps) in enumerate(val_loader):
+    for i, (imgs, caps, caplens, allcaps, _) in enumerate(val_loader):
 
         # Move to device, if available
         imgs = imgs.to(device)

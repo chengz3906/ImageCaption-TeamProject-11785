@@ -94,10 +94,10 @@ def main():
                                      std=[0.229, 0.224, 0.225])
     data_specs = "max_cap_%d_min_word_freq_%d" % (max_cap_len, min_word_freq)
     train_loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, dataset_name, data_specs, 'train', transform=transforms.Compose([normalize])),
+        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'train'),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, dataset_name, data_specs, 'val', transform=transforms.Compose([normalize])),
+        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'val'),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
 
     # Epochs
@@ -155,7 +155,7 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
     """
 
     decoder.train()  # train mode (dropout and batchnorm is used)
-    encoder.train()
+    encoder.eval()
 
     batch_time = AverageMeter()  # forward prop. + back prop. time
     data_time = AverageMeter()  # data loading time
