@@ -21,6 +21,7 @@ num_caption_per_image = 5
 emb_dim = 512  # dimension of word embeddings
 attention_dim = 512  # dimension of attention linear layers
 decoder_dim = 512  # dimension of decoder RNN
+encoder_dim = 1024
 dropout = 0.5
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
@@ -58,10 +59,11 @@ def main():
     detector.fine_tune(False)
     if checkpoint is None:
         decoder = Decoder(attention_dim=attention_dim,
-                                       embed_dim=emb_dim,
-                                       decoder_dim=decoder_dim,
-                                       vocab_size=len(word_map),
-                                       dropout=dropout)
+                          embed_dim=emb_dim,
+                          decoder_dim=decoder_dim,
+                          vocab_size=len(word_map),
+                          encoder_dim=encoder_dim,
+                          dropout=dropout)
         decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
                                              lr=decoder_lr)
         encoder = EncoderForDetector()
@@ -178,7 +180,7 @@ def train(train_loader, detector, encoder, decoder, criterion, encoder_optimizer
         caplens = caplens.to(device)
 
         # Forward prop.
-        stacked_imgs, num_boxes = detector(imgs)
+        stacked_imgs, num_boxes, _ = detector(imgs)
         features, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]
@@ -272,7 +274,7 @@ def validate(val_loader, detector, encoder, decoder, criterion):
         caplens = caplens.to(device)
 
         # Forward prop.
-        stacked_imgs, num_boxes = detector(imgs)
+        stacked_imgs, num_boxes, _ = detector(imgs)
         hidden_state, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]

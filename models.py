@@ -110,7 +110,7 @@ class Detector(nn.Module):
                 cropped = to_tensor(cropped).to(device)
                 cropped_imgs.append(cropped)
         cropped_imgs = torch.stack(cropped_imgs)
-        return cropped_imgs, bbox_num
+        return cropped_imgs, bbox_num, target_bbox
 
     def fine_tune(self, fine_tune=True):
         """
@@ -135,7 +135,7 @@ class EncoderForDetector(nn.Module):
         OR ...
     """
 
-    def __init__(self, n_hid=1024, encoded_image_size=1):
+    def __init__(self, n_hid=512, encoded_image_size=1):
         super(EncoderForDetector, self).__init__()
         self.enc_image_size = encoded_image_size
         self.n_hid = n_hid
@@ -149,7 +149,7 @@ class EncoderForDetector(nn.Module):
         # Resize image to fixed size to allow input images of variable size
         self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
 
-        self.lstm = nn.LSTM(2 * n_hid, n_hid, 1, bidirectional=True, dropout=0)
+        self.lstm = nn.LSTM(2048, n_hid, 1, bidirectional=True, dropout=0)
 
         self.fine_tune()
 
