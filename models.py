@@ -73,7 +73,8 @@ class Detector(nn.Module):
         thresh = 0.5
         target_bbox = []
         for i in range(batch_size):
-            current_bbox = []
+            whole_img = torch.FloatTensor(np.asarray([[0, 0, self.scale, self.scale]])).to(device)
+            current_bbox = [whole_img]
             for j in range(1, len(self.classes)):
                 inds = torch.nonzero(scores[i, :, j] > thresh).view(-1)
                 # if there is det
@@ -86,6 +87,7 @@ class Detector(nn.Module):
                     keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
                     cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
                     current_bbox.append(cls_dets)
+            current_bbox.append(whole_img)
             current_bbox = torch.cat(current_bbox, 0)
             target_bbox.append(current_bbox)
         # Get the number of bboxes for each image
