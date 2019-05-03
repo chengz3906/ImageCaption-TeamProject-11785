@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import torchvision
 import numpy as np
+import torch.nn.functional as F
 from torchvision.transforms.functional import resized_crop
 from torchvision.transforms import ToPILImage, ToTensor
 from model.utils.config import cfg
@@ -95,19 +96,22 @@ class Detector(nn.Module):
         bbox_num = np.array(bbox_num)
         # Crop each bbox and resize to 256*256
         cropped_imgs = []
-        to_img = ToPILImage()
-        to_tensor = ToTensor()
+        # to_img = ToPILImage()
+        # to_tensor = ToTensor()
         # images: (batch_size, 3, image_size, image_size)
         for i in range(images.shape[0]):
-            img = to_img(images[i].cpu())
+            # img = to_img(images[i].cpu())
+            img = images[i]
             bboxes = target_bbox[i]
             for j in range(bboxes.shape[0]):
-                upper = bboxes[j, 0].tolist()
-                left = bboxes[j, 1].tolist()
-                height = bboxes[j, 2].tolist() - upper
-                width = bboxes[j, 3].tolist() - left
-                cropped = resized_crop(img, upper, left, height, width, (256, 256))
-                cropped = to_tensor(cropped).to(device)
+                upper = int(bboxes[j, 0].tolist())
+                left = int(bboxes[j, 1].tolist())
+                bottom = int(bboxes[j, 2].tolist())
+                right = int(bboxes[j, 3].tolist())
+                cropped = img[:, upper:bottom, left:right]
+                cropped = F.interpolate(cropped.unsqueeze(0), (256, 256)).squeeze()
+                # cropped = resized_crop(img, upper, left, height, width, (256, 256))
+                # cropped = to_tensor(cropped).to(device)
                 cropped_imgs.append(cropped)
         cropped_imgs = torch.stack(cropped_imgs)
         return cropped_imgs, bbox_num, target_bbox
