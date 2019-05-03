@@ -19,33 +19,25 @@ class Detector(nn.Module):
     Encoder with detection.
     """
 
-    def __init__(self, scale=600):
+    def __init__(self, dataset, scale=600):
         super(Detector, self).__init__()
         self.scale = scale
 
-        self.classes = np.asarray(['__background__',
-                              'aeroplane', 'bicycle', 'bird', 'boat',
-                              'bottle', 'bus', 'car', 'cat', 'chair',
-                              'cow', 'diningtable', 'dog', 'horse',
-                              'motorbike', 'person', 'pottedplant',
-                              'sheep', 'sofa', 'train', 'tvmonitor'])
+        self.classes = np.load("models/%s_classes.npy" % dataset)
         faster_rcnn = resnet(classes=self.classes, pretrained=False)  # pretrained ImageNet ResNet-101
-
         faster_rcnn.create_architecture()
 
-        load_name = 'models/resnet101_faster_rcnn.pth'
+        load_name = 'models/%s_resnet101_faster_rcnn.pth' % dataset
         if torch.cuda.is_available():
-            checkpoint = torch.load(load_name)
+            pretrained = torch.load(load_name)
             faster_rcnn.cuda()
         else:
-            checkpoint = torch.load(load_name, map_location=(lambda storage, loc: storage))
-        faster_rcnn.load_state_dict(checkpoint['model'])
-        if 'pooling_mode' in checkpoint.keys():
-            cfg.POOLING_MODE = checkpoint['pooling_mode']
+            pretrained = torch.load(load_name, map_location=(lambda storage, loc: storage))
+        faster_rcnn.load_state_dict(pretrained['model'])
+        if 'pooling_mode' in pretrained.keys():
+            cfg.POOLING_MODE = pretrained['pooling_mode']
 
         self.resnet = faster_rcnn
-
-        self.fine_tune()
 
     def forward(self, images):
         batch_size = images.shape[0]
@@ -78,7 +70,7 @@ class Detector(nn.Module):
         pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
         pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
 
-        thresh = 0.05
+        thresh = 0.5
         target_bbox = []
         for i in range(batch_size):
             current_bbox = []
@@ -98,7 +90,7 @@ class Detector(nn.Module):
             target_bbox.append(current_bbox)
         # Get the number of bboxes for each image
         bbox_num = [b.shape[0] for b in target_bbox]
-        bbox_num = torch.from_numpy(np.array(bbox_num))
+        bbox_num = np.array(bbox_num)
         # Crop each bbox and resize to 256*256
         cropped_imgs = []
         to_img = ToPILImage()
@@ -132,7 +124,7 @@ class Detector(nn.Module):
                 p.requires_grad = fine_tune
 
 
-class EncoderForDector(nn.Module):
+class EncoderForDetector(nn.Module):
     """
     Encoder.
     input: (B * Num_box, 3, size_box, size_box), list_of_Num_box
@@ -141,8 +133,8 @@ class EncoderForDector(nn.Module):
         OR ...
     """
 
-    def __init__(self, n_hid=512, encoded_image_size=1):
-        super(Encoder, self).__init__()
+    def __init__(self, n_hid=1024, encoded_image_size=1):
+        super(EncoderForDetector, self).__init__()
         self.enc_image_size = encoded_image_size
         self.n_hid = n_hid
 
@@ -155,7 +147,7 @@ class EncoderForDector(nn.Module):
         # Resize image to fixed size to allow input images of variable size
         self.adaptive_pool = nn.AdaptiveAvgPool2d((encoded_image_size, encoded_image_size))
 
-        self.lstm = nn.LSTM(self.enc_image_size, n_hid, 1, bidirectional=True, dropout=0)
+        self.lstm = nn.LSTM(2 * n_hid, n_hid, 1, bidirectional=True, dropout=0)
 
         self.fine_tune()
 
@@ -169,24 +161,26 @@ class EncoderForDector(nn.Module):
             lstm_output: (N_max, B, N_hid)
             sorted_idx for number of boxes
         """
+        batch_size = len(num_box)
         cnn_out = self.resnet(stacked_images)  # (B*N_box, 2048, image_size/32, image_size/32)
         cnn_out = self.adaptive_pool(cnn_out)  # (B*N_box, 2048, encoded_image_size, encoded_image_size)
 
         assert self.enc_image_size == 1
         cnn_out = cnn_out.squeeze(3).squeeze(2)
         # reconstruct a list of tensors
-        start_idx = np.cumsum([0] + num_box)
+        start_idx = np.cumsum(np.insert(0, 1, num_box))
         list_tensors = [cnn_out[start_idx[i]: start_idx[i + 1]] for i in range(len(num_box))]
         sorted_idx = np.argsort(-np.array(num_box))
-        list_tensors = list_tensors[sorted_idx]
+        list_tensors = [list_tensors[i] for i in sorted_idx]
 
         packed = pack_sequence(list_tensors)
         # (N_max, B, 2048)
         packed_input, sorted_num_box = pad_packed_sequence(packed)
         packed_input = pack_padded_sequence(packed_input, sorted_num_box)
         lstm_output, (h_n, c_n) = self.lstm(packed_input)
+        features = h_n.permute(1, 0, 2).reshape(batch_size, 1, 1, -1)
 
-        return h_n, lstm_output, sorted_idx
+        return features, lstm_output, sorted_idx
 
     def fine_tune(self, fine_tune=True):
         """
@@ -200,7 +194,6 @@ class EncoderForDector(nn.Module):
         for c in list(self.resnet.children())[5:]:
             for p in c.parameters():
                 p.requires_grad = fine_tune
-
 
 
 class Encoder(nn.Module):

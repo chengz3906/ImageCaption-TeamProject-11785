@@ -2,10 +2,9 @@ import time
 import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
-import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from models import Detector, Decoder
+from models import Detector, Decoder, EncoderForDetector
 from datasets import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
@@ -13,7 +12,7 @@ from datetime import datetime
 
 # Data parameters
 data_folder = '../data'  # folder with data files saved by create_input_files.py
-dataset_name = 'flickr8k'  # base name shared by data files
+dataset_name = 'coco_val2014'  # base name shared by data files
 max_cap_len = 100
 min_word_freq = 3
 num_caption_per_image = 5
@@ -30,7 +29,7 @@ cudnn.benchmark = True  # set to true only if inputs to model are fixed size; ot
 start_epoch = 0
 epochs = 120  # number of epochs to train for (if early stopping is not triggered)
 epochs_since_improvement = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
-batch_size = 2
+batch_size = 3
 workers = 1  # for data-loading; right now, only 1 works with h5py
 encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 4e-4  # learning rate for decoder
@@ -55,6 +54,8 @@ def main():
         word_map = json.load(j)
 
     # Initialize / load checkpoint
+    detector = Detector(dataset_name)
+    detector.fine_tune(False)
     if checkpoint is None:
         decoder = Decoder(attention_dim=attention_dim,
                                        embed_dim=emb_dim,
@@ -63,7 +64,7 @@ def main():
                                        dropout=dropout)
         decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
                                              lr=decoder_lr)
-        encoder = Detector()
+        encoder = EncoderForDetector()
         encoder.fine_tune(fine_tune_encoder)
         encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
                                              lr=encoder_lr) if fine_tune_encoder else None
@@ -85,13 +86,12 @@ def main():
     # Move to GPU, if available
     decoder = decoder.to(device)
     encoder = encoder.to(device)
+    detector = detector.to(device)
 
     # Loss function
     criterion = nn.CrossEntropyLoss().to(device)
 
     # Custom dataloaders
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
     data_specs = "max_cap_%d_min_word_freq_%d" % (max_cap_len, min_word_freq)
     train_loader = torch.utils.data.DataLoader(
         CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'train'),
@@ -113,6 +113,7 @@ def main():
 
         # One epoch's training
         train(train_loader=train_loader,
+              detector=detector,
               encoder=encoder,
               decoder=decoder,
               criterion=criterion,
@@ -122,6 +123,7 @@ def main():
 
         # One epoch's validation
         recent_bleu4 = validate(val_loader=val_loader,
+                                detector=detector,
                                 encoder=encoder,
                                 decoder=decoder,
                                 criterion=criterion)
@@ -141,11 +143,12 @@ def main():
                         decoder_optimizer, recent_bleu4, is_best)
 
 
-def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_optimizer, epoch):
+def train(train_loader, detector, encoder, decoder, criterion, encoder_optimizer, decoder_optimizer, epoch):
     """
     Performs one epoch's training.
 
     :param train_loader: DataLoader for training data
+    :param detector: detector model
     :param encoder: encoder model
     :param decoder: decoder model
     :param criterion: loss layer
@@ -154,8 +157,9 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
     :param epoch: epoch number
     """
 
-    decoder.train()  # train mode (dropout and batchnorm is used)
-    encoder.eval()
+    detector.eval()
+    encoder.train()
+    decoder.train()
 
     batch_time = AverageMeter()  # forward prop. + back prop. time
     data_time = AverageMeter()  # data loading time
@@ -174,9 +178,12 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
         caplens = caplens.to(device)
 
         # Forward prop.
-        imgs = encoder(imgs)
+        stacked_imgs, num_boxes = detector(imgs)
+        features, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
+        caps = caps[sorted_idx]
+        caplens = caplens[sorted_idx]
         # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(imgs, caps, caplens)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]
@@ -231,16 +238,18 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
                                                                           top5=top5accs))
 
 
-def validate(val_loader, encoder, decoder, criterion):
+def validate(val_loader, detector, encoder, decoder, criterion):
     """
     Performs one epoch's validation.
 
     :param val_loader: DataLoader for validation data.
+    :param detector: detector model
     :param encoder: encoder model
     :param decoder: decoder model
     :param criterion: loss layer
     :return: BLEU-4 score
     """
+    detector.eval()
     decoder.eval()  # eval mode (no dropout or batchnorm)
     if encoder is not None:
         encoder.eval()
@@ -263,10 +272,12 @@ def validate(val_loader, encoder, decoder, criterion):
         caplens = caplens.to(device)
 
         # Forward prop.
-        if encoder is not None:
-            imgs = encoder(imgs)
+        stacked_imgs, num_boxes = detector(imgs)
+        hidden_state, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
+        caps = caps[sorted_idx]
+        caplens = caplens[sorted_idx]
         # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(imgs, caps, caplens)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(hidden_state, caps, caplens)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]
