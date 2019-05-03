@@ -278,11 +278,11 @@ def validate(val_loader, detector, encoder, decoder, criterion):
 
         # Forward prop.
         stacked_imgs, num_boxes, _ = detector(imgs, imgs_d)
-        hidden_state, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
+        features, sorted_idx, num_boxes = encoder(stacked_imgs, num_boxes)
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]
         # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(hidden_state, caps, caplens)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens, num_boxes)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]
