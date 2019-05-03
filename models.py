@@ -683,7 +683,7 @@ class AttentionForDetection(nn.Module):
         weight *= weight_mask
         weight = self.softmax(weight).unsqueeze(1)
 
-        context = torch.bmm(weight, encoder_output).squeeze()
+        context = torch.bmm(weight, encoder_output).squeeze(1)
 
         return context, weight
 
