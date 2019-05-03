@@ -5,7 +5,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from models import Detector, Decoder, EncoderForDetector
+from models import Detector, DecoderForDetection, EncoderForDetector
 from datasets import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
@@ -22,7 +22,7 @@ num_caption_per_image = 5
 emb_dim = 512  # dimension of word embeddings
 attention_dim = 512  # dimension of attention linear layers
 decoder_dim = 512  # dimension of decoder RNN
-encoder_dim = 2048
+encoder_dim = 512
 dropout = 0.5
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
@@ -59,7 +59,7 @@ def main():
     detector = Detector(dataset_name)
     detector.fine_tune(False)
     if checkpoint is None:
-        decoder = Decoder(attention_dim=attention_dim,
+        decoder = DecoderForDetection(attention_dim=attention_dim,
                           embed_dim=emb_dim,
                           decoder_dim=decoder_dim,
                           vocab_size=len(word_map),
@@ -184,11 +184,11 @@ def train(train_loader, detector, encoder, decoder, criterion, encoder_optimizer
 
         # Forward prop.
         stacked_imgs, num_boxes, _ = detector(imgs, imgs_d)
-        features, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
+        features, sorted_idx, num_boxes = encoder(stacked_imgs, num_boxes)
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]
         # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens, num_boxes)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]
