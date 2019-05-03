@@ -135,7 +135,7 @@ class EncoderForDetector(nn.Module):
         OR ...
     """
 
-    def __init__(self, n_hid=512, encoded_image_size=1):
+    def __init__(self, n_hid=1024, encoded_image_size=1):
         super(EncoderForDetector, self).__init__()
         self.enc_image_size = encoded_image_size
         self.n_hid = n_hid
