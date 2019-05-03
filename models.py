@@ -40,52 +40,52 @@ class Detector(nn.Module):
 
     def forward(self, images, images_d):
         batch_size = images.shape[0]
-        # im_info = torch.tensor([self.scale, self.scale, 1] * batch_size)
-        # im_info = torch.reshape(im_info, (batch_size, 3))
-        # gt_boxes = torch.zeros(batch_size, 1, 5)
-        # num_boxes = torch.ones(batch_size)
-        # if torch.cuda.is_available():
-        #     im_info = im_info.cuda()
-        #     gt_boxes = gt_boxes.cuda()
-        #     num_boxes = num_boxes.cuda()
-        #
-        # out = self.resnet(images, im_info, gt_boxes, num_boxes)
-        #
-        # boxes = out[0][:, :, 1:5]
-        # scores = out[1]
-        # bbox_pred = out[2]
-        #
-        # # Apply bounding-box regression deltas
-        # box_deltas = bbox_pred.data
-        # if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
-        #     # Optionally normalize targets by a precomputed mean and stdev
-        #     if torch.cuda.is_available():
-        #         box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
-        #                    + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
-        #     else:
-        #         box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS) \
-        #                    + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
-        #     box_deltas = box_deltas.view(batch_size, -1, 4 * len(self.classes))
-        # pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
-        # pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
+        im_info = torch.tensor([self.scale, self.scale, 1] * batch_size)
+        im_info = torch.reshape(im_info, (batch_size, 3))
+        gt_boxes = torch.zeros(batch_size, 1, 5)
+        num_boxes = torch.ones(batch_size)
+        if torch.cuda.is_available():
+            im_info = im_info.cuda()
+            gt_boxes = gt_boxes.cuda()
+            num_boxes = num_boxes.cuda()
 
-        thresh = 1.0
+        out = self.resnet(images, im_info, gt_boxes, num_boxes)
+
+        boxes = out[0][:, :, 1:5]
+        scores = out[1]
+        bbox_pred = out[2]
+
+        # Apply bounding-box regression deltas
+        box_deltas = bbox_pred.data
+        if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
+            # Optionally normalize targets by a precomputed mean and stdev
+            if torch.cuda.is_available():
+                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
+                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
+            else:
+                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS) \
+                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
+            box_deltas = box_deltas.view(batch_size, -1, 4 * len(self.classes))
+        pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
+        pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
+
+        thresh = 0.9
         target_bbox = []
         for i in range(batch_size):
             whole_img = torch.FloatTensor(np.asarray([[0, 0, self.scale, self.scale]])).to(device)
             current_bbox = [whole_img]
-            # for j in range(1, len(self.classes)):
-            #     inds = torch.nonzero(scores[i, :, j] > thresh).view(-1)
-            #     # if there is det
-            #     if inds.numel() > 0:
-            #         cls_scores = scores[i, :, j][inds]
-            #         _, order = torch.sort(cls_scores, 0, True)
-            #         cls_boxes = pred_boxes[i, inds, j * 4:(j + 1) * 4]
-            #         cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
-            #         cls_dets = cls_dets[order]
-            #         keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
-            #         cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
-            #         current_bbox.append(cls_dets)
+            for j in range(1, len(self.classes)):
+                inds = torch.nonzero(scores[i, :, j] > thresh).view(-1)
+                # if there is det
+                if inds.numel() > 0:
+                    cls_scores = scores[i, :, j][inds]
+                    _, order = torch.sort(cls_scores, 0, True)
+                    cls_boxes = pred_boxes[i, inds, j * 4:(j + 1) * 4]
+                    cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
+                    cls_dets = cls_dets[order]
+                    keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
+                    cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
+                    current_bbox.append(cls_dets)
             current_bbox.append(whole_img)
             current_bbox = torch.cat(current_bbox, 0)
             target_bbox.append(current_bbox)
