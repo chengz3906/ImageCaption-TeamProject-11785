@@ -264,7 +264,7 @@ def validate(val_loader, detector, encoder, decoder, criterion):
     hypotheses = list()  # hypotheses (predictions)
 
     # Batches
-    for i, (imgs, caps, caplens, allcaps) in enumerate(val_loader):
+    for i, (imgs, caps, caplens, allcaps, imgname) in enumerate(val_loader):
 
         # Move to device, if available
         imgs = imgs.to(device)
