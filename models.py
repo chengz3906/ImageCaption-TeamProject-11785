@@ -97,7 +97,7 @@ class Detector(nn.Module):
         to_tensor = ToTensor()
         # images: (batch_size, 3, image_size, image_size)
         for i in range(images.shape[0]):
-            img = to_img(images[i])
+            img = to_img(images[i].cpu())
             bboxes = target_bbox[i]
             for j in range(bboxes.shape[0]):
                 upper = bboxes[j, 0].tolist()
@@ -105,7 +105,7 @@ class Detector(nn.Module):
                 height = bboxes[j, 2].tolist() - upper
                 width = bboxes[j, 3].tolist() - left
                 cropped = resized_crop(img, upper, left, height, width, (256, 256))
-                cropped = to_tensor(cropped)
+                cropped = to_tensor(cropped).to(device)
                 cropped_imgs.append(cropped)
         cropped_imgs = torch.stack(cropped_imgs)
         return cropped_imgs, bbox_num
