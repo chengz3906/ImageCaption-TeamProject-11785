@@ -2,6 +2,7 @@ import time
 import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
+import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from models import Detector, Decoder, EncoderForDetector
@@ -30,7 +31,7 @@ cudnn.benchmark = True  # set to true only if inputs to model are fixed size; ot
 start_epoch = 0
 epochs = 120  # number of epochs to train for (if early stopping is not triggered)
 epochs_since_improvement = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
-batch_size = 3
+batch_size = 40
 workers = 1  # for data-loading; right now, only 1 works with h5py
 encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 4e-4  # learning rate for decoder
@@ -94,12 +95,14 @@ def main():
     criterion = nn.CrossEntropyLoss().to(device)
 
     # Custom dataloaders
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
     data_specs = "max_cap_%d_min_word_freq_%d" % (max_cap_len, min_word_freq)
     train_loader = torch.utils.data.DataLoader(
-        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'train'),
+        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'train', transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(
-        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'val'),
+        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'val', transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
 
     # Epochs
@@ -171,7 +174,7 @@ def train(train_loader, detector, encoder, decoder, criterion, encoder_optimizer
     start = time.time()
 
     # Batches
-    for i, (imgs, caps, caplens) in enumerate(train_loader):
+    for i, (imgs, caps, caplens, imgs_d) in enumerate(train_loader):
         data_time.update(time.time() - start)
 
         # Move to GPU, if available
@@ -180,7 +183,7 @@ def train(train_loader, detector, encoder, decoder, criterion, encoder_optimizer
         caplens = caplens.to(device)
 
         # Forward prop.
-        stacked_imgs, num_boxes, _ = detector(imgs)
+        stacked_imgs, num_boxes, _ = detector(imgs, imgs_d)
         features, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]
@@ -266,7 +269,7 @@ def validate(val_loader, detector, encoder, decoder, criterion):
     hypotheses = list()  # hypotheses (predictions)
 
     # Batches
-    for i, (imgs, caps, caplens, allcaps, imgname) in enumerate(val_loader):
+    for i, (imgs, caps, caplens, allcaps, imgname, imgs_d) in enumerate(val_loader):
 
         # Move to device, if available
         imgs = imgs.to(device)
@@ -274,7 +277,7 @@ def validate(val_loader, detector, encoder, decoder, criterion):
         caplens = caplens.to(device)
 
         # Forward prop.
-        stacked_imgs, num_boxes, _ = detector(imgs)
+        stacked_imgs, num_boxes, _ = detector(imgs, imgs_d)
         hidden_state, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]

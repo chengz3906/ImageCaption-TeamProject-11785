@@ -17,15 +17,14 @@ class CaptionDetectionDataset(Dataset):
     A PyTorch Dataset class to be used in a PyTorch DataLoader to create batches.
     """
 
-    def __init__(self, data_folder, data_name, data_specs, split):
+    def __init__(self, data_folder, data_name, data_specs, split, transform=None):
         """
         :param data_folder: folder where data files are stored
         :param data_name: base name of processed datasets
         :param split: split, one of 'TRAIN', 'VAL', or 'TEST'
         :param transform: image transform pipeline
         """
-        self.to_pil = ToPILImage()
-        self.to_tensor = ToTensor()
+        self.transform = transform
 
         self.split = split
         assert self.split in {'train', 'val', 'test'}
@@ -86,7 +85,7 @@ class CaptionDetectionDataset(Dataset):
         return blob, np.array(im_scale_factors)
 
     def __getitem__(self, i):
-        # Remember, the Nth caption corresponds to the (N // captions_per_image)th image
+        # Image for detector
         img = np.array(self.imgs[i // self.cpi]).transpose(1, 2, 0)
         img = img[:, :, ::-1]
         blobs, im_scales = self._get_image_blob(img)
@@ -102,13 +101,18 @@ class CaptionDetectionDataset(Dataset):
 
         imgname = self.imgnames[i // self.cpi]
 
+        # Image for decode
+        img_d = torch.FloatTensor(self.imgs[i // self.cpi] / 255.)
+        if self.transform is not None:
+            img_d = self.transform(img_d)
+
         if self.split is 'train':
-            return img, caption, caplen
+            return img, caption, caplen, img_d
         else:
             # For validation of testing, also return all 'captions_per_image' captions to find BLEU-4 score
             all_captions = torch.LongTensor(
                 self.captions[((i // self.cpi) * self.cpi):(((i // self.cpi) * self.cpi) + self.cpi)])
-            return img, caption, caplen, all_captions, imgname
+            return img, caption, caplen, all_captions, imgname, img_d
 
     def __len__(self):
         return self.dataset_size

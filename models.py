@@ -3,8 +3,6 @@ from torch import nn
 import torchvision
 import numpy as np
 import torch.nn.functional as F
-from torchvision.transforms.functional import resized_crop
-from torchvision.transforms import ToPILImage, ToTensor
 from model.utils.config import cfg
 from model.rpn.bbox_transform import bbox_transform_inv
 from model.rpn.bbox_transform import clip_boxes
@@ -40,7 +38,7 @@ class Detector(nn.Module):
 
         self.resnet = faster_rcnn
 
-    def forward(self, images):
+    def forward(self, images, images_d):
         batch_size = images.shape[0]
         im_info = torch.tensor([self.scale, self.scale, 1] * batch_size)
         im_info = torch.reshape(im_info, (batch_size, 3))
@@ -71,7 +69,7 @@ class Detector(nn.Module):
         pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
         pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
 
-        thresh = 0.5
+        thresh = 1.0
         target_bbox = []
         for i in range(batch_size):
             whole_img = torch.FloatTensor(np.asarray([[0, 0, self.scale, self.scale]])).to(device)
@@ -99,15 +97,15 @@ class Detector(nn.Module):
         # to_img = ToPILImage()
         # to_tensor = ToTensor()
         # images: (batch_size, 3, image_size, image_size)
-        for i in range(images.shape[0]):
+        for i in range(images_d.shape[0]):
             # img = to_img(images[i].cpu())
-            img = images[i]
+            img = images_d[i]
             bboxes = target_bbox[i]
             for j in range(bboxes.shape[0]):
-                upper = int(bboxes[j, 0].tolist())
-                left = int(bboxes[j, 1].tolist())
-                bottom = int(bboxes[j, 2].tolist())
-                right = int(bboxes[j, 3].tolist())
+                upper = max(0, int(bboxes[j, 0].tolist() / self.scale * 256))
+                left = max(0, int(bboxes[j, 1].tolist() / self.scale * 256))
+                bottom = min(self.scale, int(bboxes[j, 2].tolist() / self.scale * 256))
+                right = min(self.scale, int(bboxes[j, 3].tolist() / self.scale * 256))
                 cropped = img[:, upper:bottom, left:right]
                 cropped = F.interpolate(cropped.unsqueeze(0), (256, 256)).squeeze()
                 # cropped = resized_crop(img, upper, left, height, width, (256, 256))
