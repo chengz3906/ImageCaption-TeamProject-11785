@@ -87,7 +87,7 @@ class Detector(nn.Module):
                     keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
                     cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
                     current_bbox.append(cls_dets)
-            current_bbox.append(whole_img)
+            # current_bbox.append(whole_img)
             current_bbox = torch.cat(current_bbox, 0)
             target_bbox.append(current_bbox)
         # Get the number of bboxes for each image

@@ -32,7 +32,7 @@ cudnn.benchmark = True  # set to true only if inputs to model are fixed size; ot
 start_epoch = 0
 epochs = 120  # number of epochs to train for (if early stopping is not triggered)
 epochs_since_improvement = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
-batch_size = 32
+batch_size = 40
 workers = 1  # for data-loading; right now, only 1 works with h5py
 encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 4e-4  # learning rate for decoder
@@ -286,7 +286,7 @@ def validate(val_loader, detector, encoder, decoder, criterion):
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]
         # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens, num_boxes)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]
