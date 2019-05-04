@@ -12,7 +12,7 @@ import os
 
 # Parameters
 gpu = torch.cuda.is_available()
-batch_size = 3
+batch_size = 32
 data_folder = '../data'  # folder with data files saved by create_input_files.py
 dataset_name = 'coco_val2014'
 rst_path = '../results'
