@@ -184,10 +184,11 @@ def train(train_loader, detector, encoder, decoder, criterion, encoder_optimizer
 
         # Forward prop.
         stacked_imgs, num_boxes, _ = detector(imgs, imgs_d)
-        features, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
-        caps = caps[sorted_idx]
-        caplens = caplens[sorted_idx]
-        # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
+        # features, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
+        features = encoder(stacked_imgs, num_boxes)
+        # caps = caps[sorted_idx]
+        # caplens = caplens[sorted_idx]
+        # # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
         scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
@@ -278,11 +279,12 @@ def validate(val_loader, detector, encoder, decoder, criterion):
 
         # Forward prop.
         stacked_imgs, num_boxes, _ = detector(imgs, imgs_d)
-        hidden_state, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
-        caps = caps[sorted_idx]
-        caplens = caplens[sorted_idx]
-        # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(hidden_state, caps, caplens)
+        # features, lstm_output, sorted_idx = encoder(stacked_imgs, num_boxes)
+        features = encoder(stacked_imgs, num_boxes)
+        # caps = caps[sorted_idx]
+        # caplens = caplens[sorted_idx]
+        # # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]

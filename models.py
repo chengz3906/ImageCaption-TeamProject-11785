@@ -66,27 +66,28 @@ class Detector(nn.Module):
                 box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS) \
                            + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
             box_deltas = box_deltas.view(batch_size, -1, 4 * len(self.classes))
-        pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
-        pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
+        # pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
+        # pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
+        #
+        # thresh = 0.9
 
-        thresh = 0.9
         target_bbox = []
         for i in range(batch_size):
             whole_img = torch.FloatTensor(np.asarray([[0, 0, self.scale, self.scale]])).to(device)
             current_bbox = [whole_img]
-            for j in range(1, len(self.classes)):
-                inds = torch.nonzero(scores[i, :, j] > thresh).view(-1)
-                # if there is det
-                if inds.numel() > 0:
-                    cls_scores = scores[i, :, j][inds]
-                    _, order = torch.sort(cls_scores, 0, True)
-                    cls_boxes = pred_boxes[i, inds, j * 4:(j + 1) * 4]
-                    cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
-                    cls_dets = cls_dets[order]
-                    keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
-                    cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
-                    current_bbox.append(cls_dets)
-            current_bbox.append(whole_img)
+            # for j in range(1, len(self.classes)):
+            #     inds = torch.nonzero(scores[i, :, j] > thresh).view(-1)
+            #     # if there is det
+            #     if inds.numel() > 0:
+            #         cls_scores = scores[i, :, j][inds]
+            #         _, order = torch.sort(cls_scores, 0, True)
+            #         cls_boxes = pred_boxes[i, inds, j * 4:(j + 1) * 4]
+            #         cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
+            #         cls_dets = cls_dets[order]
+            #         keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
+            #         cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
+            #         current_bbox.append(cls_dets)
+            # current_bbox.append(whole_img)
             current_bbox = torch.cat(current_bbox, 0)
             target_bbox.append(current_bbox)
         # Get the number of bboxes for each image
@@ -169,22 +170,23 @@ class EncoderForDetector(nn.Module):
         cnn_out = self.resnet(stacked_images)  # (B*N_box, 2048, image_size/32, image_size/32)
         cnn_out = self.adaptive_pool(cnn_out)  # (B*N_box, 2048, encoded_image_size, encoded_image_size)
 
-        assert self.enc_image_size == 1
-        cnn_out = cnn_out.squeeze(3).squeeze(2)
-        # reconstruct a list of tensors
-        start_idx = np.cumsum(np.insert(0, 1, num_box))
-        list_tensors = [cnn_out[start_idx[i]: start_idx[i + 1]] for i in range(len(num_box))]
-        sorted_idx = np.argsort(-np.array(num_box))
-        list_tensors = [list_tensors[i] for i in sorted_idx]
+        # assert self.enc_image_size == 1
+        # cnn_out = cnn_out.squeeze(3).squeeze(2)
+        # # reconstruct a list of tensors
+        # start_idx = np.cumsum(np.insert(0, 1, num_box))
+        # list_tensors = [cnn_out[start_idx[i]: start_idx[i + 1]] for i in range(len(num_box))]
+        # sorted_idx = np.argsort(-np.array(num_box))
+        # list_tensors = [list_tensors[i] for i in sorted_idx]
+        #
+        # packed = pack_sequence(list_tensors)
+        # # (N_max, B, 2048)
+        # packed_input, sorted_num_box = pad_packed_sequence(packed)
+        # packed_input = pack_padded_sequence(packed_input, sorted_num_box)
+        # lstm_output, (h_n, c_n) = self.lstm(packed_input)
+        # features = h_n.permute(1, 0, 2).reshape(batch_size, 1, 1, -1)
 
-        packed = pack_sequence(list_tensors)
-        # (N_max, B, 2048)
-        packed_input, sorted_num_box = pad_packed_sequence(packed)
-        packed_input = pack_padded_sequence(packed_input, sorted_num_box)
-        lstm_output, (h_n, c_n) = self.lstm(packed_input)
-        features = h_n.permute(1, 0, 2).reshape(batch_size, 1, 1, -1)
-
-        return features, lstm_output, sorted_idx
+        # return features, lstm_output, sorted_idx
+        return cnn_out
 
     def fine_tune(self, fine_tune=True):
         """
