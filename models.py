@@ -39,7 +39,7 @@ class Detector(nn.Module):
 
         self.resnet = faster_rcnn
 
-    def forward(self, images, images_d):
+    def forward(self, images):
         batch_size = images.shape[0]
         im_info = torch.tensor([self.scale, self.scale, 1] * batch_size)
         im_info = torch.reshape(im_info, (batch_size, 3))
@@ -73,7 +73,7 @@ class Detector(nn.Module):
         thresh = 0.9
         target_bbox = []
         for i in range(batch_size):
-            whole_img = torch.FloatTensor(np.asarray([[0, 0, self.scale, self.scale]])).to(device)
+            whole_img = torch.FloatTensor(np.asarray([[0, 0, 1, 1]])).to(device)
             current_bbox = [whole_img]
             for j in range(1, len(self.classes)):
                 inds = torch.nonzero(scores[i, :, j] > thresh).view(-1)
@@ -86,36 +86,12 @@ class Detector(nn.Module):
                     cls_dets = cls_dets[order]
                     keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
                     cls_dets = cls_dets[keep.view(-1).long()][:, :-1]
+                    cls_dets /= self.scale
                     current_bbox.append(cls_dets)
             # current_bbox.append(whole_img)
             current_bbox = torch.cat(current_bbox, 0)
             target_bbox.append(current_bbox)
-        # Get the number of bboxes for each image
-        bbox_num = [b.shape[0] for b in target_bbox]
-        bbox_num = np.array(bbox_num)
-        # Crop each bbox and resize to 256*256
-        cropped_imgs = []
-        # to_img = ToPILImage()
-        # to_tensor = ToTensor()
-        # images: (batch_size, 3, image_size, image_size)
-        for i in range(images_d.shape[0]):
-            # img = to_img(images[i].cpu())
-            img = images_d[i]
-            bboxes = target_bbox[i]
-            for j in range(bboxes.shape[0]):
-                upper = max(0, int(bboxes[j, 0].tolist() / self.scale * 256))
-                left = max(0, int(bboxes[j, 1].tolist() / self.scale * 256))
-                bottom = min(self.scale, int(bboxes[j, 2].tolist() / self.scale * 256))
-                right = min(self.scale, int(bboxes[j, 3].tolist() / self.scale * 256))
-                cropped = torch.zeros_like(img).to(device)
-                cropped[:, upper:bottom, left:right] = img[:, upper:bottom, left:right]
-                # cropped = img[:, upper:bottom, left:right]
-                # cropped = F.interpolate(cropped.unsqueeze(0), (256, 256)).squeeze().to(device)
-                # cropped = resized_crop(img, upper, left, height, width, (256, 256))
-                # cropped = to_tensor(cropped).to(device)
-                cropped_imgs.append(cropped)
-        cropped_imgs = torch.stack(cropped_imgs)
-        return cropped_imgs, bbox_num, target_bbox
+        return target_bbox
 
     def fine_tune(self, fine_tune=True):
         """
@@ -140,7 +116,7 @@ class EncoderForDetector(nn.Module):
         OR ...
     """
 
-    def __init__(self, n_hid=1024, encoded_image_size=1, encoder_output_dim=512):
+    def __init__(self, n_hid=1024, encoded_image_size=8, encoder_output_dim=512):
         super(EncoderForDetector, self).__init__()
         self.enc_image_size = encoded_image_size
         self.n_hid = n_hid
@@ -159,7 +135,7 @@ class EncoderForDetector(nn.Module):
 
         self.fine_tune()
 
-    def forward(self, stacked_images, num_box):
+    def forward(self, images, bboxes):
         """
 
         :param stacked_images:
@@ -169,32 +145,26 @@ class EncoderForDetector(nn.Module):
             lstm_output: (N_max, B, N_hid)
             sorted_idx for number of boxes
         """
-        batch_size = len(num_box)
-        cnn_out = self.resnet(stacked_images)  # (B*N_box, 2048, image_size/32, image_size/32)
+        batch_size = len(images)
+        cnn_out = self.resnet(images)  # (B*N_box, 2048, image_size/32, image_size/32)
         cnn_out = self.adaptive_pool(cnn_out)  # (B*N_box, 2048, encoded_image_size, encoded_image_size)
+        reshaped_cnn_out = cnn_out.permute(0, 2, 3, 1).view(batch_size, -1, 2048)
+        pixel_num = self.enc_image_size * self.enc_image_size
+        num_boxes = [len(bs) + pixel_num for bs in bboxes]
+        max_seq_len = max(num_boxes)
 
-        assert self.enc_image_size == 1
-        cnn_out = cnn_out.squeeze(3).squeeze(2)
-        # reconstruct a list of tensors
-        start_idx = np.cumsum(np.insert(0, 1, num_box))
-        list_tensors = [cnn_out[start_idx[i]: start_idx[i + 1]] for i in range(len(num_box))]
-        sorted_idx = np.argsort(-np.array(num_box))
-        list_tensors = [list_tensors[i] for i in sorted_idx]
+        output_feature = torch.zeros(batch_size, max_seq_len, 2048)
+        output_feature[:, :pixel_num] = reshaped_cnn_out
+        for i, bs in enumerate(bboxes):
+            for j, bbox in enumerate(bs):
+                bbox *= self.enc_image_size
+                u = int(bbox[0])
+                l = int(bbox[1])
+                d = min(int(bbox[2]) + 1, self.enc_image_size)
+                r = min(int(bbox[3]) + 1, self.enc_image_size)
+                output_feature[i, pixel_num + j] = cnn_out[i, :, u:d, l:r].mean(dim=2).mean(dim=1)
 
-        packed = pack_sequence(list_tensors)
-        # (N_max, B, 2048)
-        packed_input, sorted_num_box = pad_packed_sequence(packed)
-        # packed_input = pack_padded_sequence(packed_input, sorted_num_box)
-        # lstm_output, (h_n, c_n) = self.lstm(packed_input)
-        # features = h_n.permute(1, 0, 2).reshape(batch_size, 1, 1, -1)
-        # lstm_output, num_box = pad_packed_sequence(lstm_output)
-        output = packed_input.permute(1, 0, 2)
-        output = self.output_linear(output)
-        output = torch.sum(output, dim=1)
-        for i in range(len(sorted_num_box)):
-            output[i] /= sorted_num_box[i]
-
-        return output, sorted_idx, sorted_num_box
+        return output_feature, num_boxes
 
     def fine_tune(self, fine_tune=True):
         """
