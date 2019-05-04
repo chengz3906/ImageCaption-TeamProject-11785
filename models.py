@@ -49,24 +49,24 @@ class Detector(nn.Module):
             gt_boxes = gt_boxes.cuda()
             num_boxes = num_boxes.cuda()
 
-        # out = self.resnet(images, im_info, gt_boxes, num_boxes)
+#        out = self.resnet(images, im_info, gt_boxes, num_boxes)
 
-        # boxes = out[0][:, :, 1:5]
-        # scores = out[1]
-        # bbox_pred = out[2]
+#        boxes = out[0][:, :, 1:5]
+#       scores = out[1]
+#        bbox_pred = out[2]
 
         # Apply bounding-box regression deltas
-        # box_deltas = bbox_pred.data
-        # if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
-        #     # Optionally normalize targets by a precomputed mean and stdev
-        #     if torch.cuda.is_available():
-        #         box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
-        #                    + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
-        #     else:
-        #         box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS) \
-        #                    + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
-        #     box_deltas = box_deltas.view(batch_size, -1, 4 * len(self.classes))
-        # # pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
+#        box_deltas = bbox_pred.data
+#        if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
+            # Optionally normalize targets by a precomputed mean and stdev
+#            if torch.cuda.is_available():
+#                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
+#                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
+#            else:
+#                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS) \
+#                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
+#            box_deltas = box_deltas.view(batch_size, -1, 4 * len(self.classes))
+        # pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
         # pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
         #
         # thresh = 0.9
