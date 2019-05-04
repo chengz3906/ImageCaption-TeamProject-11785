@@ -190,6 +190,9 @@ class EncoderForDetector(nn.Module):
         # lstm_output, num_box = pad_packed_sequence(lstm_output)
         output = packed_input.permute(1, 0, 2)
         output = self.output_linear(output)
+        output = torch.sum(output, dim=1)
+        for i in range(len(sorted_num_box)):
+            output[i] /= sorted_num_box[i]
 
         return output, sorted_idx, sorted_num_box
 

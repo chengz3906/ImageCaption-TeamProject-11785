@@ -32,7 +32,7 @@ cudnn.benchmark = True  # set to true only if inputs to model are fixed size; ot
 start_epoch = 0
 epochs = 120  # number of epochs to train for (if early stopping is not triggered)
 epochs_since_improvement = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
-batch_size = 32
+batch_size = 3
 workers = 1  # for data-loading; right now, only 1 works with h5py
 encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 4e-4  # learning rate for decoder
@@ -41,8 +41,8 @@ alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as i
 best_bleu4 = 0.  # BLEU-4 score right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = False  # fine-tune encoder?
-checkpoint = "checkpoint_coco_val2014_max_cap_100_min_word_freq_3.pth.tar"  # path to checkpoint, None if none
-
+# checkpoint = "checkpoint_coco_val2014_max_cap_100_min_word_freq_3.pth.tar"  # path to checkpoint, None if none
+checkpoint = None
 
 def main():
     """
