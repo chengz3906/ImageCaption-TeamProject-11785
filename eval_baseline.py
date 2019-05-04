@@ -172,6 +172,7 @@ def evaluate(beam_size):
             map(lambda c: [w for w in c if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}],
                 img_caps))  # remove <start> and pads
         references.append(img_captions)
+
         img_captions_text = [[rev_word_map[w] for w in cap] for cap in img_captions]
         rst_refer[imgname] = img_captions_text
 

@@ -12,6 +12,7 @@ import os
 
 # Parameters
 gpu = torch.cuda.is_available()
+batch_size = 3
 data_folder = '../data'  # folder with data files saved by create_input_files.py
 dataset_name = 'coco_val2014'
 rst_path = '../results'
@@ -63,7 +64,8 @@ def evaluate(beam_size):
     # DataLoader
     data_specs = "max_cap_%d_min_word_freq_%d" % (max_cap_len, min_word_freq)
     loader = torch.utils.data.DataLoader(
-        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'test', transform=transforms.Compose([normalize])))
+        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'test', transform=transforms.Compose([normalize])),
+    batch_size=batch_size)
 
     # TODO: Batched Beam Search
     # Therefore, do not use a batch_size greater than 1 - IMPORTANT!
@@ -76,130 +78,62 @@ def evaluate(beam_size):
     rst_hypo = dict()
     rst_refer = dict()
 
-    # For each image
-    for i, (image, caps, caplens, allcaps, imgname, img_d) in enumerate(
-            tqdm(loader, desc="EVALUATING AT BEAM SIZE " + str(beam_size))):
+    for i, (imgs, caps, caplens, allcaps, imgname, imgs_d) in enumerate(tqdm(loader)):
 
-        k = beam_size
+        # Move to device, if available
+        imgs = imgs.to(device)
+        caps = caps.to(device)
+        caplens = caplens.to(device)
 
-        # Move to GPU device, if available
-        image = image.to(device)  # (1, 3, 256, 256)
-        img_d = img_d.to(device)
+        # Forward prop.
+        stacked_imgs, num_boxes, _ = detector(imgs, imgs_d)
+        features, sorted_idx, num_boxes = encoder(stacked_imgs, num_boxes)
+        caps = caps[sorted_idx]
+        caplens = caplens[sorted_idx]
+        # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens, num_boxes)
 
-        # Encode
-        stacked_imgs, num_boxes, _ = detector(image, img_d)
-        encoder_out, sorted_idx, num_boxes = encoder(stacked_imgs, num_boxes)
-        encoder_dim = encoder_out.size(2)
+        # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
+        targets = caps_sorted[:, 1:]
 
-        # Flatten encoding
-        encoder_out = encoder_out.view(1, -1, encoder_dim)  # (1, num_pixels, encoder_dim)
-        num_pixels = encoder_out.size(1)
+        # Remove timesteps that we didn't decode at, or are pads
+        # pack_padded_sequence is an easy trick to do this
+        scores_copy = scores.clone()
+        scores, _ = pack_padded_sequence(scores, decode_lengths, batch_first=True)
+        targets, _ = pack_padded_sequence(targets, decode_lengths, batch_first=True)
 
-        # We'll treat the problem as having a batch size of k
-        encoder_out = encoder_out.expand(k, num_pixels, encoder_dim)  # (k, num_pixels, encoder_dim)
-        num_boxes = num_boxes.expand(k, 1)  # (k, num_pixels, encoder_dim)
 
-        # Tensor to store top k previous words at each step; now they're just <start>
-        k_prev_words = torch.LongTensor([[word_map['<start>']]] * k).to(device)  # (k, 1)
-
-        # Tensor to store top k sequences; now they're just <start>
-        seqs = k_prev_words  # (k, 1)
-
-        # Tensor to store top k sequences' scores; now they're just 0
-        top_k_scores = torch.zeros(k, 1).to(device)  # (k, 1)
-
-        # Lists to store completed sequences and scores
-        complete_seqs = list()
-        complete_seqs_scores = list()
-
-        # Start decoding
-        step = 1
-        h, c = decoder.init_hidden_state(encoder_out)
-
-        # s is a number less than or equal to k, because sequences are removed from this process once they hit <end>
-        while True:
-
-            embeddings = decoder.embedding(k_prev_words).squeeze(1)  # (s, embed_dim)
-
-            awe, _ = decoder.attention(h, encoder_out, num_boxes)  # (s, encoder_dim), (s, num_pixels)
-
-            # gate = decoder.sigmoid(decoder.f_beta(h))  # gating scalar, (s, encoder_dim)
-            # awe = gate * awe
-
-            h, c = decoder.decode_step(torch.cat([embeddings, awe], dim=1), (h, c))  # (s, decoder_dim)
-
-            scores = decoder.fc(h)  # (s, vocab_size)
-            scores = F.log_softmax(scores, dim=1)
-
-            # Add
-            scores = top_k_scores.expand_as(scores) + scores  # (s, vocab_size)
-
-            # For the first step, all k points will have the same scores (since same k previous words, h, c)
-            if step == 1:
-                top_k_scores, top_k_words = scores[0].topk(k, 0, True, True)  # (s)
-            else:
-                # Unroll and find top scores, and their unrolled indices
-                top_k_scores, top_k_words = scores.view(-1).topk(k, 0, True, True)  # (s)
-
-            # Convert unrolled indices to actual indices of scores
-            prev_word_inds = top_k_words / vocab_size  # (s)
-            next_word_inds = top_k_words % vocab_size  # (s)
-
-            # Add new words to sequences
-            seqs = torch.cat([seqs[prev_word_inds], next_word_inds.unsqueeze(1)], dim=1)  # (s, step+1)
-
-            # Which sequences are incomplete (didn't reach <end>)?
-            incomplete_inds = [ind for ind, next_word in enumerate(next_word_inds) if
-                               next_word != word_map['<end>']]
-            complete_inds = list(set(range(len(next_word_inds))) - set(incomplete_inds))
-
-            # Set aside complete sequences
-            if len(complete_inds) > 0:
-                complete_seqs.extend(seqs[complete_inds].tolist())
-                complete_seqs_scores.extend(top_k_scores[complete_inds])
-            k -= len(complete_inds)  # reduce beam length accordingly
-
-            # Proceed with incomplete sequences
-            if k == 0:
-                break
-            seqs = seqs[incomplete_inds]
-            h = h[prev_word_inds[incomplete_inds]]
-            c = c[prev_word_inds[incomplete_inds]]
-            encoder_out = encoder_out[prev_word_inds[incomplete_inds]]
-            num_boxes = num_boxes[prev_word_inds[incomplete_inds]]
-            top_k_scores = top_k_scores[incomplete_inds].unsqueeze(1)
-            k_prev_words = next_word_inds[incomplete_inds].unsqueeze(1)
-
-            # Break if things have been going on too long
-            if step > 50:
-                break
-            step += 1
-
-        if not complete_seqs_scores:
-            continue
-        i = complete_seqs_scores.index(max(complete_seqs_scores))
-        seq = complete_seqs[i]
-
-        imgname = imgname[0]
         # References
-        img_caps = allcaps[0].tolist()
-        img_captions = list(
-            map(lambda c: [w for w in c if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}],
-                img_caps))  # remove <start> and pads
-        references.append(img_captions)
-        img_captions_text = [[rev_word_map[w] for w in cap] for cap in img_captions]
-        rst_refer[imgname] = img_captions_text
+        allcaps = allcaps[sorted_idx][sort_ind]  # because images were sorted in the decoder
+        for j in range(allcaps.shape[0]):
+            img_caps = allcaps[j].tolist()
+            img_captions = list(
+                map(lambda c: [w for w in c if w not in {word_map['<start>'], word_map['<pad>']}],
+                    img_caps))  # remove <start> and pads
+            references.append(img_captions)
+
+            img_captions_text = [[rev_word_map[w] for w in cap] for cap in img_captions]
+            rst_refer[imgname[j]] = img_captions_text
 
         # Hypotheses
-        hypo_captions = [w for w in seq if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}]
-        hypotheses.append(hypo_captions)
-        hypo_captions_text = [rev_word_map[w] for w in hypo_captions]
-        rst_hypo[imgname] = hypo_captions_text
+        _, preds = torch.max(scores_copy, dim=2)
+        preds = preds.tolist()
+        temp_preds = list()
+        for j, p in enumerate(preds):
+            temp_preds.append(preds[j][:decode_lengths[j]])  # remove pads
+        preds = temp_preds
+        hypo_captions = [[w for w in pred if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}] for pred in preds]
+        hypotheses.extend(hypo_captions)
+        hypo_captions_text = [[rev_word_map[w] for w in hypo_caption] for hypo_caption in hypo_captions]
+        for idx, name in enumerate(imgname):
+            rst_hypo[name] = hypo_captions_text[idx]
 
         assert len(references) == len(hypotheses)
-    
+
     # Calculate BLEU-4 scores
     bleu4 = corpus_bleu(references, hypotheses)
+
+    print('\n * BLEU-4 - {bleu}\n'.format(bleu=bleu4))
 
     with open("%s/%s_REFER_%s.json"
               % (rst_path, dataset_name, data_specs), 'w') as j:
@@ -213,5 +147,5 @@ def evaluate(beam_size):
 
 
 if __name__ == '__main__':
-    beam_size = 1
+    beam_size = 3
     print("\nBLEU-4 score @ beam size of %d is %.4f." % (beam_size, evaluate(beam_size)))
