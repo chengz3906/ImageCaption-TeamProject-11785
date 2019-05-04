@@ -151,7 +151,7 @@ class EncoderForDetector(nn.Module):
         cnn_out = self.adaptive_pool(cnn_out)  # (B*N_box, 2048, encoded_image_size, encoded_image_size)
         reshaped_cnn_out = cnn_out.permute(0, 2, 3, 1).view(batch_size, -1, 2048)
         pixel_num = self.enc_image_size * self.enc_image_size
-        num_boxes = [len(bs) + pixel_num for bs in bboxes]
+        num_boxes = np.asarray([len(bs) + pixel_num for bs in bboxes])
         max_seq_len = max(num_boxes)
 
         output_feature = torch.zeros(batch_size, max_seq_len, 2048).to(device)
