@@ -145,6 +145,7 @@ class EncoderForDetector(nn.Module):
             lstm_output: (N_max, B, N_hid)
             sorted_idx for number of boxes
         """
+        images = images.to(device)
         batch_size = len(images)
         cnn_out = self.resnet(images)  # (B*N_box, 2048, image_size/32, image_size/32)
         cnn_out = self.adaptive_pool(cnn_out)  # (B*N_box, 2048, encoded_image_size, encoded_image_size)
