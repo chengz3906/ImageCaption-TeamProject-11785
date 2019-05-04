@@ -143,7 +143,7 @@ def main():
             epochs_since_improvement = 0
 
         # Save checkpoint
-        data_name = "%s_max_cap_%d_min_word_freq_%d" % (dataset_name, max_cap_len, min_word_freq)
+        data_name = "%s_epoch_%d_max_cap_%d_min_word_freq_%d" % (dataset_name, epoch, max_cap_len, min_word_freq)
         save_checkpoint(data_name, epoch, epochs_since_improvement, encoder, decoder, encoder_optimizer,
                         decoder_optimizer, recent_bleu4, is_best)
 
