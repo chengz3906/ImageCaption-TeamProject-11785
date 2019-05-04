@@ -154,7 +154,7 @@ class EncoderForDetector(nn.Module):
         num_boxes = [len(bs) + pixel_num for bs in bboxes]
         max_seq_len = max(num_boxes)
 
-        output_feature = torch.zeros(batch_size, max_seq_len, 2048)
+        output_feature = torch.zeros(batch_size, max_seq_len, 2048).to(device)
         output_feature[:, :pixel_num] = reshaped_cnn_out
         for i, bs in enumerate(bboxes):
             for j, bbox in enumerate(bs):
