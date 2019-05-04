@@ -2,7 +2,6 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
 import torchvision.transforms as transforms
-from models import *
 from datasets import *
 from utils import *
 from nltk.translate.bleu_score import corpus_bleu
@@ -10,27 +9,19 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 # Parameters
-gpu = torch.cuda.is_available()
 data_folder = '../data'  # folder with data files saved by create_input_files.py
 dataset_name = 'coco_val2014'
 rst_path = '../results'
 max_cap_len = 100
 min_word_freq = 3
 num_caption_per_image = 1
-epoch = 16
-checkpoint = '../save/BEST_checkpoint_%s_epoch_%d_max_cap_%d_min_word_freq_%d.pth.tar' % (dataset_name, epoch, max_cap_len, min_word_freq)  # model checkpoint
+checkpoint = '../save/BEST_checkpoint_%s_max_cap_%d_min_word_freq_%d.pth.tar' % (dataset_name, max_cap_len, min_word_freq)  # model checkpoint
 word_map_file = "%s/%s/%s_WORDMAP_min_word_freq_%d.json" % (data_folder, dataset_name, dataset_name, min_word_freq)  # word map, ensure it's the same the data was encoded with and the model was trained with
-device = torch.device("cuda" if gpu else "cpu")  # sets device for model and PyTorch tensors
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 
 # Load model
-detector = Detector(dataset_name)
-detector.fine_tune(False)
-detector.eval()
-if gpu:
-    checkpoint = torch.load(checkpoint)
-else:
-    checkpoint = torch.load(checkpoint, map_location='cpu')
+checkpoint = torch.load(checkpoint)
 decoder = checkpoint['decoder']
 decoder = decoder.to(device)
 decoder.eval()
@@ -59,7 +50,8 @@ def evaluate(beam_size):
     # DataLoader
     data_specs = "max_cap_%d_min_word_freq_%d" % (max_cap_len, min_word_freq)
     loader = torch.utils.data.DataLoader(
-        CaptionDetectionDataset(data_folder, dataset_name, data_specs, 'test', transform=transforms.Compose([normalize])))
+        CaptionDataset(data_folder, dataset_name, data_specs, 'test', transform=transforms.Compose([normalize])),
+        batch_size=1, shuffle=True, num_workers=1, pin_memory=True)
 
     # TODO: Batched Beam Search
     # Therefore, do not use a batch_size greater than 1 - IMPORTANT!
@@ -73,19 +65,18 @@ def evaluate(beam_size):
     rst_refer = dict()
 
     # For each image
-    for i, (image, caps, caplens, allcaps, imgname, img_d) in enumerate(
+    for i, (image, caps, caplens, allcaps, imgname) in enumerate(
             tqdm(loader, desc="EVALUATING AT BEAM SIZE " + str(beam_size))):
 
         k = beam_size
 
         # Move to GPU device, if available
         image = image.to(device)  # (1, 3, 256, 256)
-        img_d = img_d.to(device)
 
         # Encode
-        stacked_imgs, num_boxes, _ = detector(image, img_d)
-        encoder_out, sorted_idx, num_boxes = encoder(stacked_imgs, num_boxes)
-        encoder_dim = encoder_out.size(2)
+        encoder_out = encoder(image)  # (1, enc_image_size, enc_image_size, encoder_dim)
+        enc_image_size = encoder_out.size(1)
+        encoder_dim = encoder_out.size(3)
 
         # Flatten encoding
         encoder_out = encoder_out.view(1, -1, encoder_dim)  # (1, num_pixels, encoder_dim)
@@ -93,7 +84,6 @@ def evaluate(beam_size):
 
         # We'll treat the problem as having a batch size of k
         encoder_out = encoder_out.expand(k, num_pixels, encoder_dim)  # (k, num_pixels, encoder_dim)
-        num_boxes = num_boxes.expand(k, 1)  # (k, num_pixels, encoder_dim)
 
         # Tensor to store top k previous words at each step; now they're just <start>
         k_prev_words = torch.LongTensor([[word_map['<start>']]] * k).to(device)  # (k, 1)
@@ -117,10 +107,10 @@ def evaluate(beam_size):
 
             embeddings = decoder.embedding(k_prev_words).squeeze(1)  # (s, embed_dim)
 
-            awe, _ = decoder.attention(h, encoder_out, num_boxes)  # (s, encoder_dim), (s, num_pixels)
+            awe, _ = decoder.attention(encoder_out, h)  # (s, encoder_dim), (s, num_pixels)
 
-            # gate = decoder.sigmoid(decoder.f_beta(h))  # gating scalar, (s, encoder_dim)
-            # awe = gate * awe
+            gate = decoder.sigmoid(decoder.f_beta(h))  # gating scalar, (s, encoder_dim)
+            awe = gate * awe
 
             h, c = decoder.decode_step(torch.cat([embeddings, awe], dim=1), (h, c))  # (s, decoder_dim)
 
@@ -162,7 +152,6 @@ def evaluate(beam_size):
             h = h[prev_word_inds[incomplete_inds]]
             c = c[prev_word_inds[incomplete_inds]]
             encoder_out = encoder_out[prev_word_inds[incomplete_inds]]
-            num_boxes = num_boxes[prev_word_inds[incomplete_inds]]
             top_k_scores = top_k_scores[incomplete_inds].unsqueeze(1)
             k_prev_words = next_word_inds[incomplete_inds].unsqueeze(1)
 
