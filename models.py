@@ -561,7 +561,7 @@ class DecoderForDetection(nn.Module):
         self.vocab_size = vocab_size
         self.dropout = dropout
 
-        self.attention = AttentionForDetection(decoder_dim, encoder_dim)  # attention network
+        self.attention = Attention(encoder_dim, decoder_dim, encoder_dim)  # attention network
 
         self.embedding = nn.Embedding(vocab_size, embed_dim)  # embedding layer
         self.dropout = nn.Dropout(p=self.dropout)
