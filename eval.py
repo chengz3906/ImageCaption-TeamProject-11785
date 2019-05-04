@@ -8,6 +8,7 @@ from utils import *
 from nltk.translate.bleu_score import corpus_bleu
 import torch.nn.functional as F
 from tqdm import tqdm
+import os
 
 # Parameters
 gpu = torch.cuda.is_available()
@@ -22,6 +23,9 @@ checkpoint = '../save/BEST_checkpoint_%s_epoch_%d_max_cap_%d_min_word_freq_%d.pt
 word_map_file = "%s/%s/%s_WORDMAP_min_word_freq_%d.json" % (data_folder, dataset_name, dataset_name, min_word_freq)  # word map, ensure it's the same the data was encoded with and the model was trained with
 device = torch.device("cuda" if gpu else "cpu")  # sets device for model and PyTorch tensors
 cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
+
+if not os.path.exists(rst_path):
+    os.makedirs(rst_path)
 
 # Load model
 detector = Detector(dataset_name)
