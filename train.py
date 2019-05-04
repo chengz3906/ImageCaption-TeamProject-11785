@@ -24,6 +24,7 @@ attention_dim = 512  # dimension of attention linear layers
 decoder_dim = 512  # dimension of decoder RNN
 encoder_dim = 512
 dropout = 0.5
+gpu = torch.cuda.is_available()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 cudnn.benchmark = True  # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 
@@ -31,7 +32,7 @@ cudnn.benchmark = True  # set to true only if inputs to model are fixed size; ot
 start_epoch = 0
 epochs = 120  # number of epochs to train for (if early stopping is not triggered)
 epochs_since_improvement = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
-batch_size = 40
+batch_size = 3
 workers = 1  # for data-loading; right now, only 1 works with h5py
 encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 4e-4  # learning rate for decoder
@@ -40,7 +41,7 @@ alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as i
 best_bleu4 = 0.  # BLEU-4 score right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = False  # fine-tune encoder?
-checkpoint = None  # path to checkpoint, None if none
+checkpoint = "checkpoint_coco_val2014_max_cap_100_min_word_freq_3.pth.tar"  # path to checkpoint, None if none
 
 
 def main():
@@ -73,7 +74,10 @@ def main():
                                              lr=encoder_lr) if fine_tune_encoder else None
 
     else:
-        checkpoint = torch.load(checkpoint)
+        if gpu:
+            checkpoint = torch.load(checkpoint)
+        else:
+            checkpoint = torch.load(checkpoint, map_location='cpu')
         start_epoch = checkpoint['epoch'] + 1
         epochs_since_improvement = checkpoint['epochs_since_improvement']
         best_bleu4 = checkpoint['bleu-4']
@@ -319,7 +323,7 @@ def validate(val_loader, detector, encoder, decoder, criterion):
         # references = [[ref1a, ref1b, ref1c], [ref2a, ref2b], ...], hypotheses = [hyp1, hyp2, ...]
 
         # References
-        allcaps = allcaps[sort_ind]  # because images were sorted in the decoder
+        allcaps = allcaps[sorted_idx][sort_ind]  # because images were sorted in the decoder
         for j in range(allcaps.shape[0]):
             img_caps = allcaps[j].tolist()
             img_captions = list(

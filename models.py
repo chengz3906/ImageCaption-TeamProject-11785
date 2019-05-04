@@ -561,7 +561,7 @@ class DecoderForDetection(nn.Module):
         self.vocab_size = vocab_size
         self.dropout = dropout
 
-        self.attention = Attention(encoder_dim, decoder_dim, encoder_dim)  # attention network
+        self.attention = AttentionForDetection(decoder_dim, encoder_dim)  # attention network
 
         self.embedding = nn.Embedding(vocab_size, embed_dim)  # embedding layer
         self.dropout = nn.Dropout(p=self.dropout)
@@ -650,11 +650,11 @@ class DecoderForDetection(nn.Module):
         # then generate a new word in the decoder with the previous word and the attention weighted encoding
         for t in range(max(decode_lengths)):
             batch_size_t = sum([l > t for l in decode_lengths])
-            gate = self.sigmoid(self.f_beta(h[:batch_size_t]))  # gating scalar, (batch_size_t, encoder_dim)
-            attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t],
-                                                                h[:batch_size_t])
-            weighted_encoding = gate * attention_weighted_encoding
-            # weighted_encoding, _ = self.attention(h[:batch_size_t], encoder_out[:batch_size_t], num_boxes[:batch_size_t])
+            # gate = self.sigmoid(self.f_beta(h[:batch_size_t]))  # gating scalar, (batch_size_t, encoder_dim)
+            # attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t],
+            #                                                     h[:batch_size_t])
+            # weighted_encoding = gate * attention_weighted_encoding
+            weighted_encoding, _ = self.attention(h[:batch_size_t], encoder_out[:batch_size_t], num_boxes[:batch_size_t])
             # weighted_encoding = gate * encoder_out[:batch_size_t].mean(dim=1)
             h, c = self.decode_step(
                 torch.cat([embeddings[:batch_size_t, t, :], weighted_encoding], dim=1),
@@ -680,7 +680,9 @@ class AttentionForDetection(nn.Module):
         attention_query = self.embed_layer_query(decoder_state)
 
         weight = torch.bmm(encoder_output, attention_query.unsqueeze(2)).squeeze(2)
-        weight_mask = Variable(torch.zeros_like(weight).type(self.float_type))
+        weight_mask = Variable(torch.zeros_like(weight))
+        if torch.cuda.is_available():
+            weight_mask = weight_mask.cuda()
         for i in range(weight.shape[0]):
             weight_mask[i, :num_boxes[i]] = 1
         weight *= weight_mask
