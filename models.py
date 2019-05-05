@@ -148,27 +148,27 @@ class EncoderForDetector(nn.Module):
         images = images.to(device)
         batch_size = len(images)
         cnn_out = self.resnet(images)  # (B*N_box, 2048, image_size/32, image_size/32)
-        cnn_out = self.adaptive_pool(cnn_out)  # (B*N_box, 2048, encoded_image_size, encoded_image_size)
-        reshaped_cnn_out = cnn_out.permute(0, 2, 3, 1).view(batch_size, -1, 2048)
+        pool_cnn_out = self.adaptive_pool(cnn_out)  # (B*N_box, 2048, encoded_image_size, encoded_image_size)
+        reshaped_cnn_out = pool_cnn_out.permute(0, 2, 3, 1).view(batch_size, -1, 2048)
         pixel_num = self.enc_image_size * self.enc_image_size
 
         # output_feature = reshaped_cnn_out
         # num_boxes = torch.LongTensor([pixel_num for bs in bboxes]).to(device)
 
-        num_boxes = torch.LongTensor([len(bs) for bs in bboxes]).to(device)
+        num_boxes = torch.LongTensor([len(bs) + pixel_num for bs in bboxes]).to(device)
         max_seq_len = max(num_boxes)
 
         output_feature = torch.zeros(batch_size, max_seq_len, 2048).to(device)
-        # output_feature[:, :pixel_num] = reshaped_cnn_out
+        output_feature[:, :pixel_num] = reshaped_cnn_out
         for i, bs in enumerate(bboxes):
             for j, bbox in enumerate(bs):
-                bbox *= self.enc_image_size
+                bbox *= 8
                 u = int(bbox[0])
                 l = int(bbox[1])
-                d = min(int(bbox[2]) + 1, self.enc_image_size)
-                r = min(int(bbox[3]) + 1, self.enc_image_size)
-                output_feature[i, j] = cnn_out[i, :, u:d, l:r].mean(dim=2).mean(dim=1)
-                # output_feature[i, pixel_num + j] = cnn_out[i, :, u:d, l:r].mean(dim=2).mean(dim=1)
+                d = min(int(bbox[2]) + 1, 8)
+                r = min(int(bbox[3]) + 1, 8)
+                # output_feature[i, j] = cnn_out[i, :, u:d, l:r].mean(dim=2).mean(dim=1)
+                output_feature[i, pixel_num + j] = cnn_out[i, :, u:d, l:r].mean(dim=2).mean(dim=1)
 
         return output_feature, num_boxes
 
