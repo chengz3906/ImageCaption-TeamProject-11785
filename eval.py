@@ -104,7 +104,7 @@ def evaluate(beam_size):
 
 
         # References
-        imgname = np.asarray(imgname)[sorted_idx.numpy()][sort_ind.numpy()]
+        imgname = np.asarray(imgname)[sorted_idx][sort_ind.numpy()]
         allcaps = allcaps[sorted_idx][sort_ind]  # because images were sorted in the decoder
         for j in range(allcaps.shape[0]):
             img_caps = allcaps[j].tolist()
