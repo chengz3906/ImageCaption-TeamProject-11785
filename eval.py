@@ -19,7 +19,7 @@ rst_path = '../results'
 max_cap_len = 100
 min_word_freq = 3
 num_caption_per_image = 1
-epoch = 0
+epoch = 16
 checkpoint = '../save/BEST_checkpoint_%s_epoch_%d_max_cap_%d_min_word_freq_%d.pth.tar' % (dataset_name, epoch, max_cap_len, min_word_freq)  # model checkpoint
 word_map_file = "%s/%s/%s_WORDMAP_min_word_freq_%d.json" % (data_folder, dataset_name, dataset_name, min_word_freq)  # word map, ensure it's the same the data was encoded with and the model was trained with
 device = torch.device("cuda" if gpu else "cpu")  # sets device for model and PyTorch tensors
@@ -91,7 +91,7 @@ def evaluate(beam_size):
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]
         # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens, num_boxes)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]
