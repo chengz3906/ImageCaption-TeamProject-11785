@@ -32,7 +32,7 @@ cudnn.benchmark = True  # set to true only if inputs to model are fixed size; ot
 start_epoch = 0
 epochs = 120  # number of epochs to train for (if early stopping is not triggered)
 epochs_since_improvement = 0  # keeps track of number of epochs since there's been an improvement in validation BLEU
-batch_size = 4
+batch_size = 40
 workers = 1  # for data-loading; right now, only 1 works with h5py
 encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 4e-4  # learning rate for decoder
@@ -317,7 +317,7 @@ def validate(val_loader, detector, encoder, decoder, criterion):
         # references = [[ref1a, ref1b, ref1c], [ref2a, ref2b], ...], hypotheses = [hyp1, hyp2, ...]
 
         # References
-        allcaps = allcaps[sorted_idx][sort_ind]  # because images were sorted in the decoder
+        allcaps = allcaps[sort_ind]  # because images were sorted in the decoder
         for j in range(allcaps.shape[0]):
             img_caps = allcaps[j].tolist()
             img_captions = list(
