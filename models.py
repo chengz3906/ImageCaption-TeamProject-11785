@@ -3,6 +3,7 @@ from torch import nn
 import torchvision
 import numpy as np
 import torch.nn.functional as F
+from torchvision.transforms.functional import resized_crop
 from torch.autograd.variable import Variable
 from model.utils.config import cfg
 from model.rpn.bbox_transform import bbox_transform_inv
@@ -107,10 +108,10 @@ class Detector(nn.Module):
                 left = max(0, int(bboxes[j, 1].tolist() / self.scale * 256))
                 bottom = min(self.scale, int(bboxes[j, 2].tolist() / self.scale * 256))
                 right = min(self.scale, int(bboxes[j, 3].tolist() / self.scale * 256))
-                cropped = torch.zeros_like(img).to(device)
-                cropped[:, upper:bottom, left:right] = img[:, upper:bottom, left:right]
-                # cropped = img[:, upper:bottom, left:right]
-                # cropped = F.interpolate(cropped.unsqueeze(0), (256, 256)).squeeze().to(device)
+                # cropped = torch.zeros_like(img).to(device)
+                # cropped[:, upper:bottom, left:right] = img[:, upper:bottom, left:right]
+                cropped = img[:, upper:bottom, left:right]
+                cropped = F.interpolate(cropped.unsqueeze(0), (256, 256)).squeeze().to(device)
                 # cropped = resized_crop(img, upper, left, height, width, (256, 256))
                 # cropped = to_tensor(cropped).to(device)
                 cropped_imgs.append(cropped)
