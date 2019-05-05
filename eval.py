@@ -91,7 +91,7 @@ def evaluate(beam_size):
         caps = caps[sorted_idx]
         caplens = caplens[sorted_idx]
         # scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(imgs, caps, caplens)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens, num_boxes)
+        scores, caps_sorted, decode_lengths, sort_ind = decoder(features, caps, caplens)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]
